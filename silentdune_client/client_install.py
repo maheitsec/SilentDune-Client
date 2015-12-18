@@ -1,9 +1,8 @@
-#!/bin/python
 #
 # Authors: Robert Abram <robert.abram@entpack.com>
 #
 # Copyright (C) 2015 EntPack
-# see file 'LICENSE' for use and warranty information
+# see file 'COPYING' for use and warranty information
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -19,72 +18,48 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
-import gettext
-import platform
-import argparse
 import os
 import sys
 import logging
+import gettext
+import argparse
+import random
+import string
 import socket
 import requests
-import configparser
 import shutil
+import platform
 from subprocess import check_output, CalledProcessError
 
-# Keep this line to keep IDEs happy with i18n calls
-def _(message): return message
+from lib.utilities import which, setup_logging
 
+try:
+    from configparser import ConfigParser
+except ImportError:
+    from ConfigParser import ConfigParser  # ver. < 3.0
 
-def cwrite(message, debug_msg=None):
-    if args.debug:
-        if debug_msg is None:
-            logger.debug(message)
-        else:
-            logger.debug(debug_msg)
-    else:
-        sys.stdout.write(message)
-        sys.stdout.flush()
-
-
-def cwriteline(message, debug_msg=None):
-    if args.debug:
-        if debug_msg is None:
-            logger.debug(message)
-        else:
-            logger.debug(debug_msg)
-    else:
-        print(message)
-        sys.stdout.flush()
-
-
-# http://stackoverflow.com/questions/377017/test-if-executable-exists-in-python
-def which(program):
-
-    def is_exe(fpath):
-        return os.path.isfile(fpath) and os.access(fpath, os.X_OK)
-
-    fpath, fname = os.path.split(program)
-    if fpath:
-        if is_exe(program):
-            return program
-    else:
-        for path in os.environ["PATH"].split(os.pathsep):
-            path = path.strip('"')
-            exe_file = os.path.join(path, program)
-            if is_exe(exe_file):
-                return exe_file
-
-    return None
-
-
+_logger = logging.getLogger(__name__)
 
 
 class Installer():
+
+    # parser args
+    args = None
+    badparm = False
+
+    # External programs
+    __ps = None
+    __pgrep = None
+
+    # Communication
     __oauth_crypt_token = None
     __cookies = None
+
+    # Configuration Items
     __root_user = False
     __config_root = None
     __config_p = None
+    __machine_id = ''.join(random.choice('abcdef'+string.digits) for _ in range(32))
 
     # Upstart
     __ups_installed = False
@@ -95,57 +70,80 @@ class Installer():
     # sysvinit
     __sysv_installed = False
 
-    # Current firewall services
+    # Current firewall service
     __ufw = False
     __firewalld = False
     __iptables = False
 
-    def __init__(self):
+    # Firewall_platform - Currently only iptables is supported.
+    __firewall_platform = 'iptables'
 
-        self.__config_p = configparser.ConfigParser()
+    def __init__(self, args):
+
+        self.__config_p = ConfigParser(allow_no_value=True)        
+        self.args = args
+
+    def cwrite(self, message, debug_msg=None):
+
+        if self.args.debug:
+            if debug_msg is None:
+                _logger.debug(message)
+            else:
+                _logger.debug(debug_msg)
+        else:
+            sys.stdout.write(message)
+            sys.stdout.flush()
+
+    def cwriteline(self, message, debug_msg=None):
+
+        if self.args.debug:
+            if debug_msg is None:
+                _logger.debug(message)
+            else:
+                _logger.debug(debug_msg)
+        else:
+            print(message)
+            sys.stdout.flush()
 
     # Check
-    def __check_parameters(self, args):
+    def __check_parameters(self):
 
-        badparm = False
+        self.badparm = False
 
         # Check parameters exist and are sane.
-        if args.server is None:
-            logger.error('Silent Dune server name or ip address parameter required.')
-            badparm = True
+        if self.args.server is None:
+            _logger.error('Silent Dune server name or ip address parameter required.')
+            self.badparm = True
 
-        if len(args.server) > 500:
-            logger.error('Server parameter is too long.')
-            badparm = True
+        if len(self.args.server) > 500:
+            _logger.error('Server parameter is too long.')
+            self.badparm = True
 
-        if args.bundle is None:
-            logger.error('Silent Dune firewall bundle paramtere required.')
-            badparm = True
+        if self.args.bundle is None:
+            _logger.error('Silent Dune firewall bundle parameter required.')
+            self.badparm = True
 
-        if len(args.bundle) > 50:
-            logger.error('Bundle parameter is too long.')
-            badparm = True
+        if len(self.args.bundle) > 50:
+            _logger.error('Bundle parameter is too long.')
+            self.badparm = True
 
-        if badparm:
-            return False
-
-        return True
+        return not self.badparm
 
     # The purpose of this method is to authenticate the user and password against the SD server and
     # retrieve the encrypted Oauth2 token.
     def __contact_server(self, args):
 
-        cwrite('Resolving server...  ')
+        self.cwrite('Resolving server...  ')
 
         try:
             ip = socket.gethostbyname(args.server)
         except socket.error:
-            logger.error('Unable to resolve server ({0})'.format(args.server))
+            _logger.error('Unable to resolve server ({0})'.format(args.server))
             return False
 
-        cwriteline('[OK]', 'Server successfully resolved.')
+        self.cwriteline('[OK]', 'Server successfully resolved.')
 
-        cwrite('Attempting to authenticate with SD server...  ')
+        self.cwrite('Attempting to authenticate with SD server...  ')
 
         # Build authentication request
         server = 'https://' if not args.nossl else 'http://'
@@ -157,13 +155,13 @@ class Installer():
             rq = requests.get('{0}/node/auth/'.format(server))
 
             if rq.status_code != requests.codes.ok:
-                logger.error('Unable to retrieve CSRF token ({0})'.format(rq.status_code))
+                _logger.error('Unable to retrieve CSRF token ({0})'.format(rq.status_code))
                 return False
 
             csrf = rq.cookies['csrftoken']
 
         except Exception:
-            logger.error('CSRF token request attempt failed.')
+            _logger.error('CSRF token request attempt failed.')
             return False
 
         try:
@@ -175,29 +173,29 @@ class Installer():
                                      'csrfmiddlewaretoken': csrf})
 
             if rq.status_code != requests.codes.ok:
-                logger.error('Unable to authenticate to server ({0})'.format(rq.status_code))
+                _logger.error('Unable to authenticate to server ({0})'.format(rq.status_code))
                 return False
 
         except Exception:
-            logger.error('Authentication request attempt failed')
+            _logger.error('Authentication request attempt failed')
             return False
 
         if rq.json() is None:
-            logger.error('Unknown error occurred parsing server response.')
+            _logger.error('Unknown error occurred parsing server response.')
 
         # Convert reply into JSON
         reply = rq.json()
 
         # Check reply status value
         if reply['status'] != 'OK':
-            logger.error('Server authentication request failed.')
+            _logger.error('Server authentication request failed.')
             return False
 
         # Save token and cookies for later use
         self.__oauth_crypt_token = rq.cookies['token']
         self.__cookies = rq.cookies
 
-        cwriteline('[OK]', 'Successfully authenticated with server.')
+        self.cwriteline('[OK]', 'Successfully authenticated with server.')
 
         return True
 
@@ -245,24 +243,20 @@ class Installer():
 
         # Check if both locations failed.
         if root_failed and home_failed:
-            logger.critical('Unable to determine a writable configuration path for the client.')
+            _logger.critical('Unable to determine a writable configuration path for the client.')
             return False
 
         if root_failed and not home_failed:
-            logger.warning('Not running as root, setting configuration path to "{0}"'.format(self.__config_root))
+            _logger.warning('Not running as root, setting configuration path to "{0}"'.format(self.__config_root))
+            _logger.warning('Since we are not running as root, system firewall settings will not be changed.')
 
-        logger.debug('Configuration root set to "{0}"'.format(self.__config_root))
+            _logger.debug('Configuration root set to "{0}"'.format(self.__config_root))
 
         return True
 
-    def __check_installed_services(self):
+    def __init_system_check(self):
 
-        ps = which('ps')
-        pgrep = which('pgrep')
-
-        if ps is None or pgrep is None:
-            logger.critical('Unable to determine which services are on this machine.')
-            return False
+        self.cwrite('Determining Init system...  ')
 
         # See if this system is an upstart setup.
         self.__ups_installed = which('initctl') is not None and os.path.isfile(which('initctl'))
@@ -275,12 +269,26 @@ class Installer():
 
         # If we didn't detect the init system, abort.
         if not self.__ups_installed and not self.__sysd_installed and not self.__sysv_installed:
-            logger.critical('Unable to detect init system used on this machine.')
+            _logger.critical('Unable to detect init system used on this machine.')
             return False
+
+        if self.__ups_installed:
+            self.cwriteline('[OK]', 'Detected Upstart based init system.')
+        if self.__sysd_installed:
+            self.cwriteline('[OK]', 'Detected Systemd based init system.')
+        if self.__sysv_installed:
+            self.cwriteline('[OK]', 'Detected sysvinit based init system.')
+
+        return True
+
+    def __firewall_check(self):
+
+        self.cwrite('Checking for firewall service...  ')
+
+        pgrep = self.__pgrep
 
         # Check to see if ufw is running
         if self.__ups_installed:
-            logger.info('Detected Upstart based init system.')
 
             prog = which('ufw')
 
@@ -291,17 +299,15 @@ class Installer():
 
                     if pid is not None and len(pid) > 1:
                         self.__ufw = True
-                        logger.info('Detected running ufw (uncomplicated firewall) instance.')
+
                 except CalledProcessError:
                     pass
 
             else:
-                logger.debug('ufw executable not found.')
+                _logger.debug('ufw executable not found.')
 
         # Check to see if firewalld is running
         if self.__sysd_installed:
-
-            logger.info('Detected Systemd based init system.')
 
             prog = which('firewalld')
 
@@ -312,16 +318,12 @@ class Installer():
 
                     if pid is not None and len(pid) > 1:
                         self.__firewalld = True
-                        logger.info('Detected running firewalld instance.')
 
                 except CalledProcessError:
                     pass
 
             else:
-                logger.debug('firewalld executable not found.')
-
-        if self.__sysv_installed:
-            logger.info('Detected sysvinit based init system.')
+                _logger.debug('firewalld executable not found.')
 
         # The iptables service could be running regardless of the init system used on this machine.
         # Test for a running iptables instance.
@@ -335,7 +337,7 @@ class Installer():
                 if output is not None and len(output) > 1 and \
                                 'unrecognized service' not in output and 'Table:' in output:
                     self.__iptables = True
-                    logger.info('Detected running iptables firewall instance.')
+
             except CalledProcessError:
                 pass
 
@@ -345,49 +347,94 @@ class Installer():
             # We were unable to detect the running firewall service.  Its a bad thing, but maybe
             # we should let the user decided if they want to continue.
 
-            logger.warning(_("""Unable to detect the running firewall service.  You may continue, but unexpected
+            _logger.warning(_("""Unable to detect the running firewall service.  You may continue, but unexpected
                              results can occur if more than one firewall service is running.  This may lead to
                              your machine not being properly secured."""))
 
-            cwrite('Do you want to continue this install? [y/N]:')
+            self.cwrite('Do you want to continue this install? [y/N]:')
             result = sys.stdin.read(1)
 
             if result not in {'y', 'Y'}:
-                logger.debug('User aborting installation process.')
+                _logger.debug('User aborting installation process.')
                 return False
+
+        if self.__ufw:
+            self.cwriteline('[OK]', 'Detected running ufw (uncomplicated firewall) instance.')
+
+        if self.__firewalld:
+            self.cwriteline('[OK]', 'Detected running firewalld instance.')
+
+        if self.__iptables:
+            self.cwriteline('[OK]', 'Detected running iptables instance.')
+
+        return True
+
+    def __get_machine_id(self):
+
+        tmp_id = None
+
+        _logger.debug('Looking up the machine-id value.')
+
+        # See if we can find a machine-id file on this machine
+        for p in ['/etc/machine-id', '/var/lib/dbus/machine-id']:
+            if os.path.isfile(p):
+                with open(p) as h:
+                    tmp_id = h.readline().strip('\n')
+
+        # If we don't find an existing machine-id, write our new one out to self.__config_root/machine-id
+        if tmp_id is not None and len(tmp_id) > 24:
+            self.__machine_id = tmp_id
+        else:
+            with open(os.path.join(self.__config_root, 'machine-id'), 'w') as h:
+                h.write(self.__machine_id + '\n')
 
         return True
 
     def clean_up(self):
 
         # Use this method to clean up after a failed install
-        cwrite('Cleaning up...')
+        self.cwrite('Cleaning up...')
 
         # if we are running as root, delete the configuration directory
         if self.__root_user and self.__config_root is not None and os.path.exists(self.__config_root):
             shutil.rmtree(self.__config_root)
 
-        cwriteline('[OK]', 'Finished cleaning up.')
+        self.cwriteline('[OK]', 'Finished cleaning up.')
         return
 
     def start_install(self):
 
+        # Check for external programs here
+        self.__ps = which('ps')
+        self.__pgrep = which('pgrep')
+
+        if self.__ps is None or self.__pgrep is None:
+            _logger.critical('Unable to determine which services are running on this machine.')
+            return False
+
         if not self.__determine_config_root():
             return False
 
-        if not self.__check_parameters(args):
+        if not self.__get_machine_id():
             return False
 
-        if not self.__check_installed_services():
+        if not self.__check_parameters():
             return False
 
-        if not self.__contact_server(args):
+        if not self.__init_system_check():
             return False
 
+        if not self.__firewall_check():
+            return False
 
+        if not self.__contact_server(self.args):
+            return False
 
         return True
 
+# TODO: Get interface list
+
+# TODO: Register with SD Server
 
 # TODO: Download rule sets from SD Server
 
@@ -400,34 +447,29 @@ class Installer():
 # TODO: Enable SD-Client service and start service
 
 
-
-def debug_dump():
+def debug_dump(args):
     # Output the command line arguments
-    logger.debug(args)
+    _logger.debug(args)
 
     # Basic system detections
-    logging.debug('System = {0}'.format(platform.system()))
+    _logger.debug('System = {0}'.format(platform.system()))
 
     # Current distribution
-    logging.debug('Distribution = {0}'.format(platform.dist()[0]))
-    logging.debug('Distribution Version = {0}'.format(platform.dist()[1]))
+    _logger.debug('Distribution = {0}'.format(platform.dist()[0]))
+    _logger.debug('Distribution Version = {0}'.format(platform.dist()[1]))
 
     # Python version
-    logging.debug('Python Version: {0}'.format(sys.version.replace('\n', '')))
+    _logger.debug('Python Version: {0}'.format(sys.version.replace('\n', '')))
 
 
-# --- Main Program Call ---
-if __name__ == '__main__':
+def main():
 
-    logger = None
-
-    # Figure out our root directory
-    base_path = os.path.dirname(os.path.realpath(sys.argv[0]))
-    if '/install' in base_path:
-        base_path, tail = os.path.split(base_path)
+    # # Figure out our root directory
+    # base_path = os.path.dirname(os.path.realpath(sys.argv[0]))
+    # if '/install' in base_path:
+    #     base_path, tail = os.path.split(base_path)
 
     # Setup i18n - Good for 2.x and 3.x python.
-    del _  # Delete the dummy i18n call definition.
     kwargs = {}
     if sys.version_info[0] < 3:
         kwargs['unicode'] = True
@@ -444,36 +486,23 @@ if __name__ == '__main__':
     parser.add_argument(_('--debug'), help=_('Enable debug output'), default=False, action='store_true')
     args = parser.parse_args()
 
-    # Set our logging options now that we have the program arguments. Set primary logger to os.devnull and let
-    # child loggers handle logging output.
-    if args.debug:
-        logging.basicConfig(filename=os.devnull,
-                            datefmt='%Y-%m-%d %H:%M:%S', level=logging.DEBUG)
-        # Setup logging formatter
-        formatter = logging.Formatter('%(asctime)s %(levelname)s: %(message)s')
-    else:
-        logging.basicConfig(filename=os.devnull,
-                            datefmt='%Y-%m-%d %H:%M:%S', level=logging.WARNING)
-        # Setup logging formatter
-        formatter = logging.Formatter('%(levelname)s: %(message)s')
-
-    # Setup logging handler
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(formatter)
-
-    # Setup logger
-    logger = logging.getLogger()
-    logger.addHandler(handler)
+    # Setup logging now that we know the debug parameter
+    _logger.addHandler(setup_logging(args.debug))
 
     # Dump debug information
     if args.debug:
-        debug_dump()
+        debug_dump(args)
 
-    i = Installer()
+    i = Installer(args)
 
     if not i.start_install():
         i.clean_up()
-        logger.error('Install aborted.')
-        sys.exit(1)
+        _logger.error('Install aborted.')
+        return 1
 
-    sys.exit(0)
+    return 0
+
+
+# --- Main Program Call ---
+if __name__ == '__main__':
+    sys.exit(main())

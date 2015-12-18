@@ -1,30 +1,23 @@
-#
-# Authors: Robert Abram <robert.abram@entpack.com>
-#
-# Copyright (C) 2015 EntPack
-# see file 'LICENSE' for use and warranty information
-#
-# This program is free software; you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-#
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+"""
+    Setup file for silentdune_client.
 
-from distutils.core import setup
+    This file was generated with PyScaffold 2.5, a tool that easily
+    puts up a scaffold for your new Python project. Learn more under:
+    http://pyscaffold.readthedocs.org/
+"""
 
-setup(name='Silent Dune Client',
-      version='0.1',
-      description='Silent Dune Client',
-      author='Robert Abram',
-      author_email='robert.abram@entpack.com',
-      url='https://www.entpack.com/',
-      packages=['sd_client', 'sd_server'],
-     )
+import sys
+from setuptools import setup
+
+
+def setup_package():
+    needs_sphinx = {'build_sphinx', 'upload_docs'}.intersection(sys.argv)
+    sphinx = ['sphinx'] if needs_sphinx else []
+    setup(setup_requires=['six', 'pyscaffold>=2.5a0,<2.6a0'] + sphinx,
+          use_pyscaffold=True)
+
+
+if __name__ == "__main__":
+    setup_package()
