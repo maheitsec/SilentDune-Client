@@ -31,82 +31,67 @@ import shutil
 import platform
 from subprocess import check_output, CalledProcessError
 
-from lib.utilities import which, setup_logging
+from lib.utilities import which, setup_logging, CWrite
+from lib.server import SDSConnection, Node
 
 try:
     from configparser import ConfigParser
 except ImportError:
     from ConfigParser import ConfigParser  # ver. < 3.0
 
-_logger = logging.getLogger(__name__)
+_logger = logging.getLogger('sd-client')
 
 
-class Installer():
+class Installer (CWrite):
 
     # parser args
     args = None
     badparm = False
 
     # External programs
-    __ps = None
-    __pgrep = None
+    _ps = None
+    _pgrep = None
 
     # Communication
-    __oauth_crypt_token = None
-    __cookies = None
+    # _oauth_crypt_token = None
+    # _cookies = None
+    _sds_conn = None
 
     # Configuration Items
-    __root_user = False
-    __config_root = None
-    __config_p = None
-    __machine_id = ''.join(random.choice('abcdef'+string.digits) for _ in range(32))
+    _root_user = False
+    _config_root = None
+    _config_p = None
+    _machine_id = ''.join(random.choice('abcdef'+string.digits) for _ in range(32))
 
     # Upstart
-    __ups_installed = False
+    _ups_installed = False
 
     # Systemd
-    __sysd_installed = False
+    _sysd_installed = False
 
     # sysvinit
-    __sysv_installed = False
+    _sysv_installed = False
 
     # Current firewall service
-    __ufw = False
-    __firewalld = False
-    __iptables = False
+    _ufw = False
+    _firewalld = False
+    _iptables = False
 
     # Firewall_platform - Currently only iptables is supported.
-    __firewall_platform = 'iptables'
+    _firewall_platform = 'iptables'
+
+    # Node object
+    _node = None
 
     def __init__(self, args):
 
-        self.__config_p = ConfigParser(allow_no_value=True)        
+        self._config_p = ConfigParser(allow_no_value=True)        
         self.args = args
+        self.debug = args.debug   # Save debug value for cwrite methods.
+        self._sds_conn = SDSConnection(args.debug, args.server, args.nossl, args.port)
 
-    def cwrite(self, message, debug_msg=None):
-
-        if self.args.debug:
-            if debug_msg is None:
-                _logger.debug(message)
-            else:
-                _logger.debug(debug_msg)
-        else:
-            sys.stdout.write(message)
-            sys.stdout.flush()
-
-    def cwriteline(self, message, debug_msg=None):
-
-        if self.args.debug:
-            if debug_msg is None:
-                _logger.debug(message)
-            else:
-                _logger.debug(debug_msg)
-        else:
-            print(message)
-            sys.stdout.flush()
-
-    # Check
-    def __check_parameters(self):
+    # Check command line parameters.
+    def _check_parameters(self):
 
         self.badparm = False
 
@@ -129,91 +114,22 @@ class Installer():
 
         return not self.badparm
 
-    # The purpose of this method is to authenticate the user and password against the SD server and
-    # retrieve the encrypted Oauth2 token.
-    def __contact_server(self, args):
-
-        self.cwrite('Resolving server...  ')
-
-        try:
-            ip = socket.gethostbyname(args.server)
-        except socket.error:
-            _logger.error('Unable to resolve server ({0})'.format(args.server))
-            return False
-
-        self.cwriteline('[OK]', 'Server successfully resolved.')
-
-        self.cwrite('Attempting to authenticate with SD server...  ')
-
-        # Build authentication request
-        server = 'https://' if not args.nossl else 'http://'
-        server += args.server
-        server += '' if args.port == -1 else ':{0}'.format(args.port)
-
-        # Make a GET request so we can get the CSRF token.
-        try:
-            rq = requests.get('{0}/node/auth/'.format(server))
-
-            if rq.status_code != requests.codes.ok:
-                _logger.error('Unable to retrieve CSRF token ({0})'.format(rq.status_code))
-                return False
-
-            csrf = rq.cookies['csrftoken']
-
-        except Exception:
-            _logger.error('CSRF token request attempt failed.')
-            return False
-
-        try:
-
-            # Make a POST authentication request to get the encrypted oauth2 token
-            rq = requests.post('{0}/accounts/login/'.format(server),
-                               cookies=rq.cookies,
-                               data={'grant_type': 'password', 'username': args.user, 'password': args.password,
-                                     'csrfmiddlewaretoken': csrf})
-
-            if rq.status_code != requests.codes.ok:
-                _logger.error('Unable to authenticate to server ({0})'.format(rq.status_code))
-                return False
-
-        except Exception:
-            _logger.error('Authentication request attempt failed')
-            return False
-
-        if rq.json() is None:
-            _logger.error('Unknown error occurred parsing server response.')
-
-        # Convert reply into JSON
-        reply = rq.json()
-
-        # Check reply status value
-        if reply['status'] != 'OK':
-            _logger.error('Server authentication request failed.')
-            return False
-
-        # Save token and cookies for later use
-        self.__oauth_crypt_token = rq.cookies['token']
-        self.__cookies = rq.cookies
-
-        self.cwriteline('[OK]', 'Successfully authenticated with server.')
-
-        return True
-
-    def __determine_config_root(self):
+    # Determine where we are going to write the SD client configuration file.
+    def _determine_config_root(self):
 
         home = os.path.expanduser('~')
         root_failed = False
         home_failed = False
 
-        self.__config_root = '/etc/silentdune'
+        self._config_root = '/etc/silentdune'
 
         # Test to see if we are running as root
         if os.getuid() == 0:
-            test_file = os.path.join(self.__config_root, 'test.tmp')
+            test_file = os.path.join(self._config_root, 'test.tmp')
 
             try:
-                if not os.path.exists(self.__config_root):
-                    os.makedirs(self.__config_root)
+                if not os.path.exists(self._config_root):
+                    os.makedirs(self._config_root)
                 h = open(test_file, 'w')
                 h.close()
                 os.remove(test_file)
@@ -221,19 +137,19 @@ class Installer():
             except OSError:
                 root_failed = True
 
-            self.__root_user = True
+            self._root_user = True
 
         else:
             root_failed = True
 
         # If root access has failed, try the current user's home directory
         if root_failed:
-            self.__config_root = os.path.join(home, '.silentdune')
-            test_file = os.path.join(self.__config_root, 'test.tmp')
+            self._config_root = os.path.join(home, '.silentdune')
+            test_file = os.path.join(self._config_root, 'test.tmp')
 
             try:
-                if not os.path.exists(self.__config_root):
-                    os.makedirs(self.__config_root)
+                if not os.path.exists(self._config_root):
+                    os.makedirs(self._config_root)
                 h = open(test_file, 'w')
                 h.close()
                 os.remove(test_file)
@@ -247,48 +163,50 @@ class Installer():
             return False
 
         if root_failed and not home_failed:
-            _logger.warning('Not running as root, setting configuration path to "{0}"'.format(self.__config_root))
+            _logger.warning('Not running as root, setting configuration path to "{0}"'.format(self._config_root))
             _logger.warning('Since we are not running as root, system firewall settings will not be changed.')
 
-            _logger.debug('Configuration root set to "{0}"'.format(self.__config_root))
+            _logger.debug('Configuration root set to "{0}"'.format(self._config_root))
 
         return True
 
-    def __init_system_check(self):
+    # Check which init system is running on this system.
+    def _init_system_check(self):
 
         self.cwrite('Determining Init system...  ')
 
         # See if this system is an upstart setup.
-        self.__ups_installed = which('initctl') is not None and os.path.isfile(which('initctl'))
+        self._ups_installed = which('initctl') is not None and os.path.isfile(which('initctl'))
 
         # See if this system is a systemd setup.
-        self.__sysd_installed = which('systemctl') is not None and os.path.exists('/run/systemd/system')
+        self._sysd_installed = which('systemctl') is not None and os.path.exists('/run/systemd/system')
 
         # See if this system is a sysvinit setup.
-        self.__sysv_installed = which('service') is not None and not self.__sysd_installed and not self.__ups_installed
+        self._sysv_installed = which('service') is not None and not self._sysd_installed and not self._ups_installed
 
         # If we didn't detect the init system, abort.
-        if not self.__ups_installed and not self.__sysd_installed and not self.__sysv_installed:
+        if not self._ups_installed and not self._sysd_installed and not self._sysv_installed:
             _logger.critical('Unable to detect init system used on this machine.')
             return False
 
-        if self.__ups_installed:
+        if self._ups_installed:
             self.cwriteline('[OK]', 'Detected Upstart based init system.')
-        if self.__sysd_installed:
+        if self._sysd_installed:
             self.cwriteline('[OK]', 'Detected Systemd based init system.')
-        if self.__sysv_installed:
+        if self._sysv_installed:
             self.cwriteline('[OK]', 'Detected sysvinit based init system.')
 
         return True
 
-    def __firewall_check(self):
+    # Determine which firewall service is running on this system.
+    def _firewall_check(self):
 
         self.cwrite('Checking for firewall service...  ')
 
-        pgrep = self.__pgrep
+        pgrep = self._pgrep
 
         # Check to see if ufw is running
-        if self.__ups_installed:
+        if self._ups_installed:
 
             prog = which('ufw')
 
@@ -298,7 +216,7 @@ class Installer():
                     pid = check_output('{0} -f "{1}"'.format(pgrep, prog), shell=True)[:]
 
                     if pid is not None and len(pid) > 1:
-                        self.__ufw = True
+                        self._ufw = True
 
                 except CalledProcessError:
                     pass
@@ -307,7 +225,7 @@ class Installer():
                 _logger.debug('ufw executable not found.')
 
         # Check to see if firewalld is running
-        if self.__sysd_installed:
+        if self._sysd_installed:
 
             prog = which('firewalld')
 
@@ -317,7 +235,7 @@ class Installer():
                     pid = check_output('{0} -f "{1}"'.format(pgrep, prog), shell=True)[:]
 
                     if pid is not None and len(pid) > 1:
-                        self.__firewalld = True
+                        self._firewalld = True
 
                 except CalledProcessError:
                     pass
@@ -327,7 +245,7 @@ class Installer():
 
         # The iptables service could be running regardless of the init system used on this machine.
         # Test for a running iptables instance.
-        if not self.__ufw and not self.__firewalld and os.path.isfile('/etc/init.d/iptables'):
+        if not self._ufw and not self._firewalld and os.path.isfile('/etc/init.d/iptables'):
 
             # Check the iptables service status
             # TODO: Probably need a different check for each init system
@@ -336,13 +254,13 @@ class Installer():
 
                 if output is not None and len(output) > 1 and \
                                 'unrecognized service' not in output and 'Table:' in output:
-                    self.__iptables = True
+                    self._iptables = True
 
             except CalledProcessError:
                 pass
 
         # check to see that we detected a running firewall service
-        if not self.__ufw and not self.__firewalld and not self.__iptables:
+        if not self._ufw and not self._firewalld and not self._iptables:
 
             # We were unable to detect the running firewall service.  Its a bad thing, but maybe
             # we should let the user decided if they want to continue.
@@ -358,18 +276,19 @@ class Installer():
                 _logger.debug('User aborting installation process.')
                 return False
 
-        if self.__ufw:
+        if self._ufw:
             self.cwriteline('[OK]', 'Detected running ufw (uncomplicated firewall) instance.')
 
-        if self.__firewalld:
+        if self._firewalld:
             self.cwriteline('[OK]', 'Detected running firewalld instance.')
 
-        if self.__iptables:
+        if self._iptables:
             self.cwriteline('[OK]', 'Detected running iptables instance.')
 
         return True
 
-    def __get_machine_id(self):
+    # Get the machine unique identifier or generate one for this machine.
+    def _get_machine_id(self):
 
         tmp_id = None
 
@@ -381,12 +300,12 @@ class Installer():
                 with open(p) as h:
                     tmp_id = h.readline().strip('\n')
 
-        # If we don't find an existing machine-id, write our new one out to self.__config_root/machine-id
+        # If we don't find an existing machine-id, write our new one out to self._config_root/machine-id
         if tmp_id is not None and len(tmp_id) > 24:
-            self.__machine_id = tmp_id
+            self._machine_id = tmp_id
         else:
-            with open(os.path.join(self.__config_root, 'machine-id'), 'w') as h:
-                h.write(self.__machine_id + '\n')
+            with open(os.path.join(self._config_root, 'machine-id'), 'w') as h:
+                h.write(self._machine_id + '\n')
 
         return True
 
@@ -396,8 +315,8 @@ class Installer():
         self.cwrite('Cleaning up...')
 
         # if we are running as root, delete the configuration directory
-        if self.__root_user and self.__config_root is not None and os.path.exists(self.__config_root):
-            shutil.rmtree(self.__config_root)
+        if self._root_user and self._config_root is not None and os.path.exists(self._config_root):
+            shutil.rmtree(self._config_root)
 
         self.cwriteline('[OK]', 'Finished cleaning up.')
         return
@@ -405,40 +324,61 @@ class Installer():
     def start_install(self):
 
         # Check for external programs here
-        self.__ps = which('ps')
-        self.__pgrep = which('pgrep')
+        self._ps = which('ps')
+        self._pgrep = which('pgrep')
 
-        if self.__ps is None or self.__pgrep is None:
+        if self._ps is None or self._pgrep is None:
             _logger.critical('Unable to determine which services are running on this machine.')
             return False
 
-        if not self.__determine_config_root():
+        if not self._determine_config_root():
             return False
 
-        if not self.__get_machine_id():
+        if not self._get_machine_id():
             return False
 
-        if not self.__check_parameters():
+        if not self._check_parameters():
             return False
 
-        if not self.__init_system_check():
+        if not self._init_system_check():
             return False
 
-        if not self.__firewall_check():
+        if not self._firewall_check():
             return False
 
-        if not self.__contact_server(self.args):
+        if not self._sds_conn.connect_with_password(self.args.user, self.args.password):
+            return False
+
+        data = Node(
+                platform=self._firewall_platform,
+                os=platform.system().lower(),
+                dist=platform.dist()[0],
+                dist_version=platform.dist()[1],
+                hostname=socket.gethostname(),
+                python_version=sys.version.replace('\n', ''),
+                machine_id=self._machine_id,
+        )
+
+        # Attempt to register this node on the SD server.
+        self._node = self._sds_conn.register_node(data)
+
+        if not self._node or self._node.id is None:
             return False
 
         return True
 
 # TODO: Get interface list
+    def get_interfaces(self):
 
-# TODO: Register with SD Server
+        # use netifaces to get list of interfaces for this client
+
+        return True
+
+# TODO: Check for iptables executable (iptables package)
 
 # TODO: Download rule sets from SD Server
 
-# TODO: Check for iptables executable (iptables package)
+
 
 # TODO: Check firewalld service is running and disable.
 
