@@ -18,21 +18,21 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
-import os
-import sys
-import logging
-import gettext
 import argparse
-import random
-import string
-import socket
-import requests
-import shutil
+import gettext
+import logging
+import os
 import platform
+import random
+import shutil
+import socket
+import string
+import sys
 from subprocess import check_output, CalledProcessError
 
-from lib.utilities import which, setup_logging, CWrite
-from lib.server import SDSConnection, Node
+from utilities import which, setup_logging, CWrite
+
+from server import SDSConnection, Node
 
 try:
     from configparser import ConfigParser
