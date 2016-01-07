@@ -46,11 +46,14 @@ class Installer (CWrite):
 
     # parser args
     args = None
-    badparm = False
+    bad_arg = False
 
     # External programs
     _ps = None
     _pgrep = None
+    _iptables_exec = None
+    _iptables_save = None
+    _iptables_restore = None
 
     # Communication
     # _oauth_crypt_token = None
@@ -90,32 +93,36 @@ class Installer (CWrite):
         self.debug = args.debug   # Save debug value for cwrite methods.
         self._sds_conn = SDSConnection(args.debug, args.server, args.nossl, args.port)
 
-    # Check command line parameters.
-    def _check_parameters(self):
+    def _check_args(self):
+        """
+        Validate the command line arguments.
+        """
 
-        self.badparm = False
+        self.bad_arg = False
 
         # Check parameters exist and are sane.
         if self.args.server is None:
             _logger.error('Silent Dune server name or ip address parameter required.')
-            self.badparm = True
+            self.bad_arg = True
 
         if len(self.args.server) > 500:
             _logger.error('Server parameter is too long.')
-            self.badparm = True
+            self.bad_arg = True
 
         if self.args.bundle is None:
             _logger.error('Silent Dune firewall bundle parameter required.')
-            self.badparm = True
+            self.bad_arg = True
 
         if len(self.args.bundle) > 50:
             _logger.error('Bundle parameter is too long.')
-            self.badparm = True
+            self.bad_arg = True
 
-        return not self.badparm
+        return not self.bad_arg
 
-    # Determine where we are going to write the SD client configuration file.
     def _determine_config_root(self):
+        """
+        Determine where we are going to write the SD client configuration file.
+        """
 
         home = os.path.expanduser('~')
         root_failed = False
@@ -170,8 +177,10 @@ class Installer (CWrite):
 
         return True
 
-    # Check which init system is running on this system.
     def _init_system_check(self):
+        """
+        Determine which init system is running on this system.
+        """
 
         self.cwrite('Determining Init system...  ')
 
@@ -198,8 +207,10 @@ class Installer (CWrite):
 
         return True
 
-    # Determine which firewall service is running on this system.
     def _firewall_check(self):
+        """
+        Determine which firewall service is running on this system.
+        """
 
         self.cwrite('Checking for firewall service...  ')
 
@@ -217,6 +228,7 @@ class Installer (CWrite):
 
                     if pid is not None and len(pid) > 1:
                         self._ufw = True
+                        self.cwriteline('[OK]', 'Detected running ufw (uncomplicated firewall) instance.')
 
                 except CalledProcessError:
                     pass
@@ -236,6 +248,7 @@ class Installer (CWrite):
 
                     if pid is not None and len(pid) > 1:
                         self._firewalld = True
+                        self.cwriteline('[OK]', 'Detected running firewalld instance.')
 
                 except CalledProcessError:
                     pass
@@ -245,16 +258,17 @@ class Installer (CWrite):
 
         # The iptables service could be running regardless of the init system used on this machine.
         # Test for a running iptables instance.
-        if not self._ufw and not self._firewalld and os.path.isfile('/etc/init.d/iptables'):
+        if not self._ufw and not self._firewalld:
 
             # Check the iptables service status
-            # TODO: Probably need a different check for each init system
+            # TODO: Need a different check for each init system
             try:
                 output = check_output('service iptables status', shell=True)[:]
 
                 if output is not None and len(output) > 1 and \
                                 'unrecognized service' not in output and 'Table:' in output:
                     self._iptables = True
+                    self.cwriteline('[OK]', 'Detected running iptables instance.')
 
             except CalledProcessError:
                 pass
@@ -276,19 +290,12 @@ class Installer (CWrite):
                 _logger.debug('User aborting installation process.')
                 return False
 
-        if self._ufw:
-            self.cwriteline('[OK]', 'Detected running ufw (uncomplicated firewall) instance.')
-
-        if self._firewalld:
-            self.cwriteline('[OK]', 'Detected running firewalld instance.')
-
-        if self._iptables:
-            self.cwriteline('[OK]', 'Detected running iptables instance.')
-
         return True
 
-    # Get the machine unique identifier or generate one for this machine.
     def _get_machine_id(self):
+        """
+        Find the machine unique identifier or generate one for this machine.
+        """
 
         tmp_id = None
 
@@ -309,10 +316,32 @@ class Installer (CWrite):
 
         return True
 
-    def clean_up(self):
+    # TODO: Get interface list
+    def _get_interfaces(self):
 
-        # Use this method to clean up after a failed install
+        # use netifaces to get list of interfaces for this client
+
+        return True
+
+    # TODO: Download rule sets from SD Server
+
+
+
+    # TODO: Check firewalld service is running and disable.
+
+    # TODO: Check iptables services are running and disable.
+
+    # TODO: Enable SD-Client service and start service
+
+    def clean_up(self):
+        """
+        Use this method to clean up after a failed install
+        """
         self.cwrite('Cleaning up...')
+
+        # TODO: Remove client service
+
+        # TODO: Restore previous firewall service
 
         # if we are running as root, delete the configuration directory
         if self._root_user and self._config_root is not None and os.path.exists(self._config_root):
@@ -322,13 +351,23 @@ class Installer (CWrite):
         return
 
     def start_install(self):
+        """
+        Begin installing the Silent Dune Client.
+        """
 
         # Check for external programs here
         self._ps = which('ps')
         self._pgrep = which('pgrep')
+        self._iptables_exec = which('iptables')
+        self._iptables_save = which('iptables-save')
+        self._iptables_restore = which('iptables-restore')
 
         if self._ps is None or self._pgrep is None:
             _logger.critical('Unable to determine which services are running on this machine.')
+            return False
+
+        if self._iptables is None or self._iptables_save is None or self._iptables_restore is None:
+            _logger.critical('Unable to find iptables executables.')
             return False
 
         if not self._determine_config_root():
@@ -337,7 +376,7 @@ class Installer (CWrite):
         if not self._get_machine_id():
             return False
 
-        if not self._check_parameters():
+        if not self._check_args():
             return False
 
         if not self._init_system_check():
@@ -367,28 +406,11 @@ class Installer (CWrite):
 
         return True
 
-# TODO: Get interface list
-    def get_interfaces(self):
-
-        # use netifaces to get list of interfaces for this client
-
-        return True
-
-# TODO: Check for iptables executable (iptables package)
-
-# TODO: Download rule sets from SD Server
-
-
-
-# TODO: Check firewalld service is running and disable.
-
-# TODO: Check iptables services are running and disable.
-
-# TODO: Enable SD-Client service and start service
-
 
 def debug_dump(args):
-    # Output the command line arguments
+    """
+    Output the system information.
+    """
     _logger.debug(args)
 
     # Basic system detections

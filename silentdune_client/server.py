@@ -245,7 +245,7 @@ class SDSConnection(CWrite):
         #     if not key.startswith("__"):
         #         print('{0} = {1}'.format(key, value))
 
-        self.cwriteline('[OK]', 'Successfully registered this node.')
+        self.cwriteline('[OK]', 'Node successfully registered.')
 
         return node
 
