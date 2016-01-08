@@ -32,7 +32,7 @@ from subprocess import check_output, CalledProcessError
 
 from utilities import which, setup_logging, CWrite
 
-from server import SDSConnection, Node
+from server import SDSConnection, Node, Bundle, NodeBundle
 
 try:
     from configparser import ConfigParser
@@ -85,6 +85,8 @@ class Installer (CWrite):
 
     # Node object
     _node = None
+    _bundle = None
+    _node_bundle = None
 
     def __init__(self, args):
 
@@ -109,11 +111,7 @@ class Installer (CWrite):
             _logger.error('Server parameter is too long.')
             self.bad_arg = True
 
-        if self.args.bundle is None:
-            _logger.error('Silent Dune firewall bundle parameter required.')
-            self.bad_arg = True
-
-        if len(self.args.bundle) > 50:
+        if self.args.bundle is not None and len(self.args.bundle) > 50:
             _logger.error('Bundle parameter is too long.')
             self.bad_arg = True
 
@@ -279,11 +277,11 @@ class Installer (CWrite):
             # We were unable to detect the running firewall service.  Its a bad thing, but maybe
             # we should let the user decided if they want to continue.
 
-            _logger.warning(_("""Unable to detect the running firewall service.  You may continue, but unexpected
-                             results can occur if more than one firewall service is running.  This may lead to
-                             your machine not being properly secured."""))
+            _logger.warning(_("Unable to detect the running firewall service.  You may continue, but unexpected "
+                              "results can occur if more than one firewall service is running.  This may lead to "
+                              "your machine not being properly secured."))
 
-            self.cwrite('Do you want to continue this install? [y/N]:')
+            self.cwrite('Do you want to continue with this install? [y/N]:')
             result = sys.stdin.read(1)
 
             if result not in {'y', 'Y'}:
@@ -332,6 +330,77 @@ class Installer (CWrite):
     # TODO: Check iptables services are running and disable.
 
     # TODO: Enable SD-Client service and start service
+
+    def _register_node(self):
+
+        # Look for existing Node record first.
+        self._node = self._sds_conn.get_node_by_machine_id(self._machine_id)
+
+        if self._node is not None:
+            _logger.warning('Node already registered, using previously registered node information.')
+            # TODO: Maybe we should query the user here. Multiple nodes with the same machine_id is a problem.
+        else:
+
+            self.cwrite('Registering Node...  ')
+
+            data = Node(
+                    platform=self._firewall_platform,
+                    os=platform.system().lower(),
+                    dist=platform.dist()[0],
+                    dist_version=platform.dist()[1],
+                    hostname=socket.gethostname(),
+                    python_version=sys.version.replace('\n', ''),
+                    machine_id=self._machine_id,
+            )
+
+            # Attempt to register this node on the SD server.
+            self._node = self._sds_conn.register_node(data)
+
+            if not self._node or self._node.id is None:
+                self.cwriteline('[Failed]', 'Register Node failed, unknown reason.')
+                return False
+
+            self.cwriteline('[OK]', 'Node successfully registered.')
+
+        return True
+
+    def _get_rule_bundle(self):
+
+        if self.args.bundle is not None:
+
+            self.cwrite('Looking up rule bundle...')
+
+            self._bundle = self._sds_conn.get_bundle_by_name(self.args.bundle)
+
+            if self._bundle and self._bundle.id > 0:
+                self.cwriteline('[OK]', 'Found rule bundle.')
+                print(self._bundle.to_json())
+                return True
+
+            self.cwriteline('[Failed]', 'Unable to find rule bundle named "{0}".'.format(self.args.bundle))
+
+            _logger.warning(_("Unable to find the rule bundle specified. The installer can try to lookup "
+                              "and use the default server rule bundle."))
+
+            self.cwrite('Do you want to use the server default rule bundle or abort install? [y/N]:')
+            result = sys.stdin.read(1)
+
+            if result not in {'y', 'Y'}:
+                _logger.debug('User aborting installation process.')
+                return False
+
+        self.cwrite('Looking up the server default rule bundle...')
+
+        self._bundle = self._sds_conn.get_default_bundle()
+
+        if not self._bundle or self._bundle.id is None:
+            self.cwriteline('[Failed]', 'Default bundle lookup failed.')
+            return False
+
+        self.cwriteline('[OK]', 'Found default rule bundle.')
+
+        return True
+
 
     def clean_up(self):
         """
@@ -388,21 +457,18 @@ class Installer (CWrite):
         if not self._sds_conn.connect_with_password(self.args.user, self.args.password):
             return False
 
-        data = Node(
-                platform=self._firewall_platform,
-                os=platform.system().lower(),
-                dist=platform.dist()[0],
-                dist_version=platform.dist()[1],
-                hostname=socket.gethostname(),
-                python_version=sys.version.replace('\n', ''),
-                machine_id=self._machine_id,
-        )
-
-        # Attempt to register this node on the SD server.
-        self._node = self._sds_conn.register_node(data)
-
-        if not self._node or self._node.id is None:
+        if not self._register_node():
             return False
+
+        if not self._get_rule_bundle():
+            return False
+
+        self._node_bundle = NodeBundle(node=self._node.id, bundle=self._bundle.id)
+
+        if not self._sds_conn.set_node_bundle(self._node_bundle):
+            return False
+
+        print (self._node_bundle.to_json())
 
         return True
 
@@ -440,7 +506,7 @@ def main():
     # Setup program arguments.
     parser = argparse.ArgumentParser(prog='sd-client-install')
     parser.add_argument(_('server'), help=_('Silent Dune server'), default=None, type=str)
-    parser.add_argument(_('bundle'), help=_('Firewall bundle to use for this node'), default=None, type=str)
+    parser.add_argument('-b', _('--bundle'), help=_('Firewall bundle to use for this node'), default=None, type=str)
     parser.add_argument('-u', _('--user'), help=_('Server admin user id'), default=None, type=str)
     parser.add_argument('-p', _('--password'), help=_('Server admin password'), default=None, type=str)
     parser.add_argument(_('--nossl'), help=_('Do not use an SSL connection'), default=False, action='store_true')

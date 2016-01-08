@@ -20,7 +20,7 @@
 
 import logging
 import socket
-
+import json
 import requests
 
 from utilities import CWrite
@@ -28,19 +28,7 @@ from utilities import CWrite
 _logger = logging.getLogger('sd-client')
 
 
-class Node:
-
-    id = None
-    platform = None          # Firewall platform, IE: iptables
-    os = None            # System, IE: linux, windows, macos, freebsd, netbsd.
-    dist = None              # Distribution Name.
-    dist_version = None      # Distribution Version.
-    hostname = None
-    python_version = None
-    machine_id = None        # Unique machine ID.
-    last_connection = None   # Last connection datetime stamp.
-    node_sync = False        # It True, server is requesting this Node to push it's information to the server.
-    notes = None             # Notes about this node
+class JsonObject:
 
     def __init__(self, *args, **kwargs):
         """
@@ -59,6 +47,54 @@ class Node:
                 self.__dict__[key] = value
                 # print('{0} : {1}'.format(key, value))
 
+    def to_json(self):
+        return json.dumps(self, default=lambda o: o.__dict__, sort_keys=True)
+
+    def to_dict(self):
+        data = dict()
+        for key, value in self.__dict__.items():
+            if not key.startswith("__") and value is not None:
+                data[key] = value
+        return data
+
+
+class Bundle (JsonObject):
+    """
+    Represents the BundleSerializer json schema
+    """
+    id = None
+    platform = None
+    name = None
+    desc = None
+    notes = None
+    default = False
+
+
+class Node (JsonObject):
+    """
+    Represents the NodeSerializer json schema
+    """
+    id = None
+    platform = None          # Firewall platform, IE: iptables
+    os = None                # System, IE: linux, windows, macos, freebsd, netbsd.
+    dist = None              # Distribution Name.
+    dist_version = None      # Distribution Version.
+    hostname = None
+    python_version = None
+    machine_id = None        # Unique machine ID.
+    last_connection = None   # Last connection datetime stamp.
+    node_sync = False        # It True, server is requesting this Node to push it's information to the server.
+    notes = None             # Notes about this node
+
+
+class NodeBundle (JsonObject):
+    """
+    Represents the NodeBundleSerializer json schema
+    """
+    id = None
+    node = None              # Node Id value
+    bundle = None            # Bundle Id value
+
 
 class SDSConnection(CWrite):
 
@@ -69,7 +105,7 @@ class SDSConnection(CWrite):
 
     # Connection Information
     _server = None
-    _url = None
+    _base_url = None
     _nossl = False
     _port = -1
     _user = None
@@ -83,12 +119,57 @@ class SDSConnection(CWrite):
         self._nossl = nossl
         self._port = port
 
-    def _build_url(self):
+    def _build_base_url(self):
 
         # Build base URL
-        self._url = 'https://' if not self._nossl else 'http://'
-        self._url += self._server
-        self._url += '' if self._port == -1 else ':{0}'.format(self._port)
+        self._base_url = 'https://' if not self._nossl else 'http://'
+        self._base_url += self._server
+        self._base_url += '' if self._port == -1 else ':{0}'.format(self._port)
+
+    def _make_json_request(self, reqtype, url, data=None):
+
+        reply = None
+        status_code = None
+        rq = None
+
+        if not self.authenticated:
+            _logger.error('Not authenticated to SD server.')
+            return reply, status_code, rq
+
+        try:
+
+            self._build_base_url()
+            u = '{0}{1}'.format(self._base_url, url)
+
+            if reqtype is 'GET':
+                rq = requests.get(u, cookies=dict(token=self._oauth_crypt_token))
+            elif reqtype is 'POST':
+                rq = requests.post(u, data=data, cookies=dict(token=self._oauth_crypt_token))
+            elif reqtype is 'PUT':
+                rq = requests.put(u, data=data, cookies=dict(token=self._oauth_crypt_token))
+            elif reqtype is 'DELETE':
+                rq = requests.delete(u, cookies=dict(token=self._oauth_crypt_token))
+            elif reqtype is 'HEAD':
+                rq = requests.head(u, cookies=dict(token=self._oauth_crypt_token))
+            elif reqtype is 'OPTIONS':
+                rq = requests.options(u, cookies=dict(token=self._oauth_crypt_token))
+
+        except requests.Timeout:
+            _logger.error('Server request timeout.')
+        except requests.ConnectionError:
+            _logger.error('Server connection error.')
+        except requests.RequestException:
+            _logger.error('Server request failed.')
+        else:
+
+            try:
+                reply = rq.json()
+            except ValueError:
+                pass
+
+            status_code = rq.status_code
+
+        return reply, status_code, rq
 
     # The purpose of this method is to authenticate the user and password against the SD server and
     # retrieve the encrypted Oauth2 token.
@@ -116,8 +197,8 @@ class SDSConnection(CWrite):
         # Make a GET request so we can get the CSRF token.
         try:
 
-            self._build_url()
-            rq = requests.get('{0}/accounts/login/'.format(self._url))
+            self._build_base_url()
+            rq = requests.get('{0}/accounts/login/'.format(self._base_url))
 
             if rq.status_code != requests.codes.ok:
                 _logger.error('Unable to retrieve CSRF token ({0})'.format(rq.status_code))
@@ -132,7 +213,7 @@ class SDSConnection(CWrite):
         try:
 
             # Make a POST authentication request to get the encrypted oauth2 token
-            rq = requests.post('{0}/accounts/login/'.format(self._url),
+            rq = requests.post('{0}/accounts/login/'.format(self._base_url),
                                cookies=rq.cookies,
                                data={'grant_type': 'password', 'username': username, 'password': password,
                                      'csrfmiddlewaretoken': csrf})
@@ -166,89 +247,97 @@ class SDSConnection(CWrite):
 
         return True
 
-    def lookup_node_by_machine_id(self, machine_id):
+    def get_node_by_machine_id(self, machine_id):
+        """
+        Request Node object from server filtered by machine_id value.
+        :param machine_id:
+        :return Node object:
+        """
 
-        if not self.authenticated:
-            _logger.error('Not authenticated to SD server.')
-            return None
+        url = '/api/nodes/?machine_id={0}'.format(machine_id)
 
-        try:
+        reply, status_code, rq = self._make_json_request('GET', url)
 
-            self._build_url()
-            rq = requests.get('{0}/api/nodes/?machine_id={1}'.format(self._url, machine_id),
-                              cookies=dict(token=self._oauth_crypt_token))
+        if reply is not None and status_code == requests.codes.ok:
+            return Node(reply[0])
 
-        except requests.RequestException:
-            _logger.error('Node lookup request failed.')
+        _logger.error('Node lookup request failed.')
 
-        if rq.status_code != requests.codes.ok:
-            _logger.error('Lookup Node failed, unknown response.')
-            return None
-
-        reply = rq.json()
-
-        if reply is None:
-            return None
-
-        # Use the first array element which is our node values
-        return Node(reply[0])
+        return None
 
     def register_node(self, node):
-
-        self.cwrite('Registering Node...  ')
+        """
+        Register Node on server.
+        :param node:
+        :return Node:
+        """
 
         if type(node) is not Node:
-            _logger.error('Node parameter is not a Node object.')
+            _logger.critical('Node parameter is not valid in register_node method.')
             return None
 
-        if not self.authenticated:
-            _logger.error('Not authenticated to SD server.')
+        reply, status_code, rq = self._make_json_request('POST', '/api/nodes/', node.to_dict())
+
+        if reply is not None and status_code is not None:
+
+            # 201 means the node record was created successfully.
+            if status_code == requests.codes.created:
+                # Get the ID of the registered node
+                node.id = rq.json()['id']
+
+                return Node
+
+        return None
+
+    def get_bundle_by_name(self, name):
+        """
+        Request Bundle object from server filtered by name value.
+        :param name:
+        :return Bundle:
+        """
+
+        url = '/api/bundles/?name={0}'.format(name)
+
+        reply, status_code, rq = self._make_json_request('GET', url)
+
+        if reply is not None and status_code == requests.codes.ok and len(reply) > 0:
+            return Bundle(reply[0])
+
+        return None
+
+    def get_default_bundle(self):
+        """
+        Request Bundle object from server filtered by name value.
+        :param name:
+        :return Bundle:
+        """
+
+        url = '/api/bundles/?default'
+
+        reply, status_code, rq = self._make_json_request('GET', url)
+
+        if reply is not None and status_code == requests.codes.ok and len(reply) > 0:
+            return Bundle(reply[0])
+
+        return None
+
+    def set_node_bundle(self, node_bundle):
+
+        if type(node_bundle) is not NodeBundle:
+            _logger.critical('NodeBundle parameter is not valid in set_node_bundle method.')
             return None
 
-        # Setup a dictionary with the Node properties
-        data = dict()
-        for key, value in node.__dict__.items():
-            if not key.startswith("__") and key is not 'id' and value is not None:
-                data[key] = value
+        url = '/api/nodes/{0}/bundle/'.format(node_bundle.node)
 
-        try:
-            self._build_url()
-            rq = requests.post('{0}/api/nodes/'.format(self._url),
-                                cookies=dict(token=self._oauth_crypt_token),
-                                json=data)
+        # Attempt to do an update first
 
-        except requests.RequestException:
-            _logger.error('Node registration request failed.')
-            return None
+        # TODO: Must get record before trying an update...
 
-        # Check to see if we received the proper response code
-        if rq.status_code != requests.codes.created:
+        reply, status_code, rq = self._make_json_request('PUT', url, node_bundle.to_dict())
 
-            # 400 means the node record might already exist, lets look for it.
-            if rq.status_code == requests.codes.bad_request:
+        reply, status_code, rq = self._make_json_request('POST', url, node_bundle.to_dict())
 
-                node = self.lookup_node_by_machine_id(node.machine_id)
+        if reply is not None and status_code == requests.codes.created and len(reply) > 0:
+            return NodeBundle(reply)
 
-                if node is not None:
-                    _logger.warning('Node already exists on server.')
-
-                return node
-
-            else:
-                _logger.error('Register Node failed, unknown response.')
-                return None
-
-        # Get the ID of the registered node
-        node.id = rq.json()['id']
-
-        # for key, value in node.__dict__.items():
-        #     if not key.startswith("__"):
-        #         print('{0} = {1}'.format(key, value))
-
-        self.cwriteline('[OK]', 'Node successfully registered.')
-
-        return node
-
-
-
-
+        return None
