@@ -32,7 +32,8 @@ from subprocess import check_output, CalledProcessError
 
 from utilities import which, setup_logging, CWrite
 
-from server import SDSConnection, Node, Bundle, NodeBundle
+from server import SDSConnection
+from json_models import *
 
 try:
     from configparser import ConfigParser
@@ -314,23 +315,6 @@ class Installer (CWrite):
 
         return True
 
-    # TODO: Get interface list
-    def _get_interfaces(self):
-
-        # use netifaces to get list of interfaces for this client
-
-        return True
-
-    # TODO: Download rule sets from SD Server
-
-
-
-    # TODO: Check firewalld service is running and disable.
-
-    # TODO: Check iptables services are running and disable.
-
-    # TODO: Enable SD-Client service and start service
-
     def _register_node(self):
 
         # Look for existing Node record first.
@@ -338,7 +322,7 @@ class Installer (CWrite):
 
         if self._node is not None:
             _logger.warning('Node already registered, using previously registered node information.')
-            # TODO: Maybe we should query the user here. Multiple nodes with the same machine_id is a problem.
+            # TODO: Maybe we should query the user here. Multiple nodes with the same machine_id will be a problem.
         else:
 
             self.cwrite('Registering Node...  ')
@@ -401,6 +385,20 @@ class Installer (CWrite):
 
         return True
 
+    def _set_node_bundle(self):
+
+        self.cwrite('Setting Node rule bundle...')
+
+        data = NodeBundle(node=self._node.id, bundle=self._bundle.id)
+
+        self._node_bundle = self._sds_conn.create_or_update_node_bundle(data)
+
+        if not self._node_bundle:
+            self.cwriteline('[Failed]', 'Unable to set Node rule bundle.')
+            return False
+
+        self.cwriteline('[OK]', 'Node rule bundle successfully set.')
+        return True
 
     def clean_up(self):
         """
@@ -463,12 +461,26 @@ class Installer (CWrite):
         if not self._get_rule_bundle():
             return False
 
-        self._node_bundle = NodeBundle(node=self._node.id, bundle=self._bundle.id)
-
-        if not self._sds_conn.set_node_bundle(self._node_bundle):
+        if not self._set_node_bundle():
             return False
 
-        print (self._node_bundle.to_json())
+        # TODO: Get and Upload adapter interface list to server
+        # Note: It might be better to call ifconfig instead of using netifaces to get adapter info.
+
+        # Get the chainset IDs assigned to the bundle
+        self._bundle_chainsets = self._sds_conn.get_bundle_chainsets(self._node_bundle)
+        if self._bundle_chainsets is None:
+            return False
+
+
+
+        # TODO: Download rule sets from SD Server
+
+        # TODO: Check firewalld service is running and disable.
+
+        # TODO: Check iptables services are running and disable.
+
+        # TODO: Enable SD-Client service and start service
 
         return True
 

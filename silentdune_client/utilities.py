@@ -25,7 +25,7 @@ import logging
 _logger = logging.getLogger('sd-client')
 
 
-class CWrite:
+class CWrite(object):
 
     debug = False
 

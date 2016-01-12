@@ -20,83 +20,16 @@
 
 import logging
 import socket
-import json
 import requests
+import io
 
 from utilities import CWrite
+from json_models import *
 
 _logger = logging.getLogger('sd-client')
 
 
-class JsonObject:
-
-    def __init__(self, *args, **kwargs):
-        """
-        If parameter values in args, then the value is expected to be a dictionary from a node json response
-        from the server.
-
-        If parameter values are in kwargs, then they are named parameters passed when the object is instantiated.
-        """
-        if len(args) is not 0:
-            for key, value in args[0].items():
-                self.__dict__[key] = value
-                # print('{0} : {1}'.format(key, value))
-
-        else:
-            for key, value in kwargs.items():
-                self.__dict__[key] = value
-                # print('{0} : {1}'.format(key, value))
-
-    def to_json(self):
-        return json.dumps(self, default=lambda o: o.__dict__, sort_keys=True)
-
-    def to_dict(self):
-        data = dict()
-        for key, value in self.__dict__.items():
-            if not key.startswith("__") and value is not None:
-                data[key] = value
-        return data
-
-
-class Bundle (JsonObject):
-    """
-    Represents the BundleSerializer json schema
-    """
-    id = None
-    platform = None
-    name = None
-    desc = None
-    notes = None
-    default = False
-
-
-class Node (JsonObject):
-    """
-    Represents the NodeSerializer json schema
-    """
-    id = None
-    platform = None          # Firewall platform, IE: iptables
-    os = None                # System, IE: linux, windows, macos, freebsd, netbsd.
-    dist = None              # Distribution Name.
-    dist_version = None      # Distribution Version.
-    hostname = None
-    python_version = None
-    machine_id = None        # Unique machine ID.
-    last_connection = None   # Last connection datetime stamp.
-    node_sync = False        # It True, server is requesting this Node to push it's information to the server.
-    notes = None             # Notes about this node
-
-
-class NodeBundle (JsonObject):
-    """
-    Represents the NodeBundleSerializer json schema
-    """
-    id = None
-    node = None              # Node Id value
-    bundle = None            # Bundle Id value
-
-
-class SDSConnection(CWrite):
+class SDSConnection (CWrite):
 
     # Security
     _oauth_crypt_token = None
@@ -271,8 +204,7 @@ class SDSConnection(CWrite):
         :param node:
         :return Node:
         """
-
-        if type(node) is not Node:
+        if isinstance(node, None):
             _logger.critical('Node parameter is not valid in register_node method.')
             return None
 
@@ -321,23 +253,56 @@ class SDSConnection(CWrite):
 
         return None
 
-    def set_node_bundle(self, node_bundle):
+    def create_or_update_node_bundle(self, nb):
 
-        if type(node_bundle) is not NodeBundle:
-            _logger.critical('NodeBundle parameter is not valid in set_node_bundle method.')
+        # if isinstance(nb, NodeBundle):  <-- Not working, unsure why.
+        if nb is None:
+            _logger.critical('NodeBundle parameter is not valid in create_or_update_node_bundle method.')
             return None
 
-        url = '/api/nodes/{0}/bundle/'.format(node_bundle.node)
+        url = '/api/nodes/{0}/bundle/'.format(nb.node)
 
-        # Attempt to do an update first
+        # NodeBundleViewSet will update or create with a POST request.
+        reply, status_code, rq = self._make_json_request('POST', url, nb.to_dict())
 
-        # TODO: Must get record before trying an update...
-
-        reply, status_code, rq = self._make_json_request('PUT', url, node_bundle.to_dict())
-
-        reply, status_code, rq = self._make_json_request('POST', url, node_bundle.to_dict())
-
-        if reply is not None and status_code == requests.codes.created and len(reply) > 0:
+        if reply is not None and \
+                (status_code == requests.codes.created or status_code == requests.codes.ok):
             return NodeBundle(reply)
+
+        return None
+
+    def get_bundle_chainsets(self, nb):
+
+        # if isinstance(nb, NodeBundle):  <-- Not working, unsure why.
+        if nb is None:
+            _logger.critical('NodeBundle parameter is not valid in create_or_update_node_bundle method.')
+            return None
+
+        url = '/api/bundles/{0}/chainsets/'.format(nb.bundle)
+
+        reply, status_code, rq = self._make_json_request('GET', url)
+
+        if reply is not None and status_code == requests.codes.ok:
+            # chainsets = [IPBundleChainSet(id=id, chainset=chainset) for id, chainset in reply[0].items()]
+            # return chainsets
+            for i, c in reply[0].items():
+
+                url = '/api/iptables/chainsets/{0}/'.format(c)
+
+                reply, status_code, rq = self._make_json_request('GET', url)
+
+                if reply is not None and status_code == requests.codes.ok:
+
+                    chainset = IPChainSet(reply)
+
+                    with io.open('rule4.txt', 'w') as h:
+                        chainset.write(h, u'ipv4')
+                        h.flush()
+
+                    with io.open('rule6.txt', 'w') as h:
+                        chainset.write(h, u'ipv6')
+                        h.flush()
+
+
 
         return None
