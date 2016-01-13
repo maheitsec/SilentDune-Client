@@ -18,10 +18,11 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
+import io
+import os
 import logging
 import socket
 import requests
-import io
 
 from utilities import CWrite
 from json_models import *
@@ -282,6 +283,8 @@ class SDSConnection (CWrite):
 
         reply, status_code, rq = self._make_json_request('GET', url)
 
+        ol = list()
+
         if reply is not None and status_code == requests.codes.ok:
             # chainsets = [IPBundleChainSet(id=id, chainset=chainset) for id, chainset in reply[0].items()]
             # return chainsets
@@ -292,17 +295,32 @@ class SDSConnection (CWrite):
                 reply, status_code, rq = self._make_json_request('GET', url)
 
                 if reply is not None and status_code == requests.codes.ok:
+                    ol.append(IPChainSet(reply))
 
-                    chainset = IPChainSet(reply)
+        if len(ol) == 0:
+            return None
 
-                    with io.open('rule4.txt', 'w') as h:
-                        chainset.write(h, u'ipv4')
-                        h.flush()
+        return ol
 
-                    with io.open('rule6.txt', 'w') as h:
-                        chainset.write(h, u'ipv6')
-                        h.flush()
+    def write_bundle_chainsets(self, path, cs):
+        """
+        Write the chainset data to a file.
+        This process starts by looping through each of the iptable table names, then calling o.write_chains() to
+        setup the custom iptables chain names for that table.  Then o.write() is called to write out the rules for
+        that table. Chain names are defined by the built-in chain name, slot number and pk id of the IPRing object.
+        """
 
+        if cs is None:
+            _logger.error('Array of chainset objects not valid.')
 
+        cs[1].slot = '20'
 
-        return None
+        for v in {u'ipv4', u'ipv6'}:
+
+            file = os.path.join(path, u'{0}_rules.txt'.format(v))
+
+            writer = IPRulesFileWriter(cs)
+
+            writer.write_to_file(file, v)
+
+        return True

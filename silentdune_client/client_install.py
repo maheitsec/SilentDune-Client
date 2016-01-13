@@ -88,6 +88,7 @@ class Installer (CWrite):
     _node = None
     _bundle = None
     _node_bundle = None
+    _bundle_chainsets = None
 
     def __init__(self, args):
 
@@ -472,7 +473,7 @@ class Installer (CWrite):
         if self._bundle_chainsets is None:
             return False
 
-
+        self._sds_conn.write_bundle_chainsets('./', self._bundle_chainsets)
 
         # TODO: Download rule sets from SD Server
 
