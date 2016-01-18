@@ -328,7 +328,7 @@ class Installer (CWrite):
 
             self.cwrite('Registering Node...  ')
 
-            data = Node(
+            nobj = Node(
                     platform=self._firewall_platform,
                     os=platform.system().lower(),
                     dist=platform.dist()[0],
@@ -339,7 +339,7 @@ class Installer (CWrite):
             )
 
             # Attempt to register this node on the SD server.
-            self._node = self._sds_conn.register_node(data)
+            self._node = self._sds_conn.register_node(nobj)
 
             if not self._node or self._node.id is None:
                 self.cwriteline('[Failed]', 'Register Node failed, unknown reason.')

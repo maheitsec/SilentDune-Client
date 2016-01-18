@@ -25,6 +25,7 @@ from datetime import datetime
 
 _logger = logging.getLogger('sd-client')
 
+
 class JsonObject(object):
 
     _json_data = False
@@ -58,13 +59,13 @@ class JsonObject(object):
         return data
 
     def dict_to_obj_array(self, cls, data):
-
+        """
+        # Convert dict to array of objects of type cls
+        """
         if data is None:
             return None
 
-        # Convert dict to array of objects of type cls
         ol = list()
-
         for x in range(0, len(data)):
             ol.append(cls(data[x]))
 
@@ -116,6 +117,7 @@ class IPBundleChainSet(JsonObject):
     id = None
     chainset = None
 
+
 class IPRulesFileWriter(object):
     """
     Object for writing iptables rules to a file
@@ -125,9 +127,9 @@ class IPRulesFileWriter(object):
     def __init__(self, chainsets):
         self._chainsets = chainsets
         
-    def _get_default_table_chains(self, stream, table):
+    def _get_default_table_chains(self, table):
         """
-        Write out the builtin chains for the table specified and return the list.
+        Return the builtin chains for the table specified and return the list.
         """
         chains = []
 
@@ -154,7 +156,7 @@ class IPRulesFileWriter(object):
         for t in {u'filter', 'nat', 'raw', 'mangle', 'security'}:
             
             try:
-                chains = self._get_default_table_chains(stream, t)  # Write out the builtin chains for iptables
+                chains = self._get_default_table_chains(t)
 
                 # Now we need to see if there is a IPRing object that matches the builtin chain and table.
                 cinfo = dict()
@@ -177,10 +179,9 @@ class IPRulesFileWriter(object):
                 stream.write(s)
 
                 # Loop through and write out the builtin chain names for this table.
-                for k, c in cinfo.items():
-                    if c is not None:
-                        s = u':{0} - [0:0]\n'.format(k)
-                        stream.write(s)
+                for c in chains:
+                    s = u':{0} ACCEPT [0:0]\n'.format(c)
+                    stream.write(s)
 
                 # TODO: Missing chains in output.
                 # Loop through and write out the chain names for the chains we have rules for.
@@ -195,16 +196,13 @@ class IPRulesFileWriter(object):
                         s = u'-A {0} -j {1}\n'.format(k, c)
                         stream.write(s)
 
-                # Loop through the Chainsets
-                #for ol in self._chainsets:
-                    # ol.write_chains(stream, True, version, t)  # Write out the builtin Chain names.
-                    # ol.write_chains(stream, False, version, t)  # Write out the custom Chain names.
-
                 for ol in self._chainsets:
                     ol.write(stream, version, t)  # Write out the Chain rules.
 
                 # TODO: Look and see if we have another chainset and write a jump line.
 
+                s = u'COMMIT\n'
+                stream.write(s)
                 s = u'# Table {0} end\n'.format(t)
                 stream.write(s)
 
@@ -254,7 +252,7 @@ class IPChainSet(JsonObject):
     def get_table_chain_name(self, version, table, chain):
 
         if self.chains is not None:
-            for o in self.chains:  # Call child objects write_chain method.
+            for o in iter(self.chains):  # Call child objects write_chain method.
                 if o.name == table:  # Only call if the table name matches.
                     name = o.get_table_chain_name(version, table, chain)
 
@@ -271,17 +269,10 @@ class IPChainSet(JsonObject):
 
         return None
 
-    def write_chains(self, stream, builtin, version, table):
-
-        if self.chains is not None:
-            for o in self.chains:  # Call child objects write_chain method.
-                if o.name == table:  # Only call if the table name matches.
-                    o.write_chain(stream, version, table, self.slot)
-
     def write(self, stream, version, table):
 
         if self.chains is not None:
-            for o in self.chains:  # Call child objects write method.
+            for o in iter(self.chains):  # Call child objects write method.
                 if o.name == table:  # Only call if the table name matches.
                     o.write(stream, version, table, self.slot)
 
@@ -303,22 +294,11 @@ class IPChain(JsonObject):
         Return the ring chain name if the version and chain name match.
         """
         if self.rings is not None:
-            for o in self.rings:
+            for o in iter(self.rings):
                 if o.version == version and o.name.upper() == chain.upper():
                     return o.name.upper()
 
         return None
-
-    def write_chain(self, stream, version, table, slot):
-        """
-        Write out the chain definitions.
-        """
-        # Build the suffix for the iptables Chain name.
-        suffix = u'_{0}_{1}'.format(slot, self.id)
-
-        if self.rings is not None:
-            for o in self.rings:  # Call child objects write_chain method.
-                o.write_chain(stream, version, suffix)
 
     def write(self, stream, version, table, slot):
 
@@ -326,7 +306,7 @@ class IPChain(JsonObject):
         suffix = u'_{0}_{1}'.format(slot, self.id)
 
         if self.rings is not None:
-            for o in self.rings:  # Call child objects write method.
+            for o in iter(self.rings):  # Call child objects write method.
                 o.write(stream, version, suffix)
 
 
@@ -343,22 +323,13 @@ class IPRing(JsonObject):
         super(IPRing, self).__init__(args[0], kwargs)
         self.rules = self.dict_to_obj_array(IPRule, self.rules)
 
-    def write_chain(self, stream, version, suffix):
-        """
-        Write out the Chain names, builtin is always called before custom chains.
-        """
-        # This tells iptables to setup a Chain with this name so the rules can be added to it.
-        if version == self.version and self.rules is not None:
-            s = u':{0}{1} - [0:0]\n'.format(self.name.upper(), suffix)
-            stream.write(s)
-
     def write(self, stream, version, suffix):
 
         chain = u'{0}{1}'.format(self.name.upper(), suffix)
 
         # Only write out rules if the versions match
         if version == self.version and self.rules is not None:
-            for o in self.rules:
+            for o in iter(self.rules):
 
                 # iptables Chain name that the rule is attached to, matches the Chain name from write_chain.
                 s = u'-A {0}'.format(chain)
@@ -411,19 +382,19 @@ class IPRule(JsonObject):
             self.ifaceOut.write(stream)
 
         if self.protocol is not None:  # Call child objects write method.
-            for o in self.protocol:
+            for o in iter(self.protocol):
                 o.write(stream)
 
         if self.source is not None:  # Call child objects write method.
-            for o in self.source:
+            for o in iter(self.source):
                 o.write(stream)
 
         if self.destination is not None:  # Call child objects write method.
-            for o in self.destination:
+            for o in iter(self.destination):
                 o.write(stream)
 
         if self.matches is not None:  # Call child objects write method.
-            for o in self.matches:
+            for o in iter(self.matches):
                 o.write(stream)
 
         if self.jump is not None and self.jump.id is not None:
@@ -502,7 +473,7 @@ class IPMatch(JsonObject):
         s = u' -m {0}'.format(self.name)
         stream.write(s)
 
-        for o in self.options:  # Call child objects write method.
+        for o in iter(self.options):  # Call child objects write method.
             o.write(stream)
 
 
@@ -563,7 +534,7 @@ class IPJump(JsonObject):
         s = u' -j {0}'.format(self.target)
         stream.write(s)
 
-        for o in self.params:  # Call child objects write method.
+        for o in iter(self.params):  # Call child objects write method.
             o.write(stream)
 
 

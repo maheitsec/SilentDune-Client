@@ -19,6 +19,7 @@
 #
 
 import io
+import copy
 import os
 import logging
 import socket
@@ -190,9 +191,10 @@ class SDSConnection (CWrite):
 
         url = '/api/nodes/?machine_id={0}'.format(machine_id)
 
+        # Reply contains dict array of Node records.  Reply array should be empty or contain one Node record.
         reply, status_code, rq = self._make_json_request('GET', url)
 
-        if reply is not None and status_code == requests.codes.ok:
+        if status_code == requests.codes.ok and reply is not None and len(reply) != 0:
             return Node(reply[0])
 
         _logger.error('Node lookup request failed.')
@@ -205,20 +207,18 @@ class SDSConnection (CWrite):
         :param node:
         :return Node:
         """
-        if isinstance(node, None):
+        if not isinstance(node, Node):
             _logger.critical('Node parameter is not valid in register_node method.')
             return None
 
+        # Reply contains single Node record
         reply, status_code, rq = self._make_json_request('POST', '/api/nodes/', node.to_dict())
 
         if reply is not None and status_code is not None:
 
             # 201 means the node record was created successfully.
             if status_code == requests.codes.created:
-                # Get the ID of the registered node
-                node.id = rq.json()['id']
-
-                return Node
+                return Node(reply)
 
         return None
 
@@ -247,6 +247,7 @@ class SDSConnection (CWrite):
 
         url = '/api/bundles/?default'
 
+        # Reply contains single Bundle record
         reply, status_code, rq = self._make_json_request('GET', url)
 
         if reply is not None and status_code == requests.codes.ok and len(reply) > 0:
@@ -281,17 +282,19 @@ class SDSConnection (CWrite):
 
         url = '/api/bundles/{0}/chainsets/'.format(nb.bundle)
 
+        # Reply contains dict array of IPBundleChainSet records.
         reply, status_code, rq = self._make_json_request('GET', url)
 
         ol = list()
 
         if reply is not None and status_code == requests.codes.ok:
-            # chainsets = [IPBundleChainSet(id=id, chainset=chainset) for id, chainset in reply[0].items()]
-            # return chainsets
-            for i, c in reply[0].items():
 
-                url = '/api/iptables/chainsets/{0}/'.format(c)
+            # Iterate over the reply to get our chainset records.
+            for o in reply:
 
+                url = '/api/iptables/chainsets/{0}/'.format(o['id'])
+
+                # Reply contains single IPChainSet record.
                 reply, status_code, rq = self._make_json_request('GET', url)
 
                 if reply is not None and status_code == requests.codes.ok:
@@ -313,8 +316,6 @@ class SDSConnection (CWrite):
         if cs is None:
             _logger.error('Array of chainset objects not valid.')
 
-        cs[1].slot = '20'
-
         for v in {u'ipv4', u'ipv6'}:
 
             file = os.path.join(path, u'{0}_rules.txt'.format(v))
@@ -322,5 +323,7 @@ class SDSConnection (CWrite):
             writer = IPRulesFileWriter(cs)
 
             writer.write_to_file(file, v)
+
+            break
 
         return True
