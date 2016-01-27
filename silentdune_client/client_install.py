@@ -33,14 +33,14 @@ from subprocess import check_output, CalledProcessError
 from utilities import which, setup_logging, CWrite
 
 from server import SDSConnection
-from json_models import *
+from json_models import Node, NodeBundle
+
+_logger = logging.getLogger('sd-client')
 
 try:
     from configparser import ConfigParser
 except ImportError:
     from ConfigParser import ConfigParser  # ver. < 3.0
-
-_logger = logging.getLogger('sd-client')
 
 
 class Installer (CWrite):
@@ -92,7 +92,7 @@ class Installer (CWrite):
 
     def __init__(self, args):
 
-        self._config_p = ConfigParser(allow_no_value=True)        
+        self._config_p = ConfigParser(allow_no_value=True)
         self.args = args
         self.debug = args.debug   # Save debug value for cwrite methods.
         self._sds_conn = SDSConnection(args.debug, args.server, args.nossl, args.port)
@@ -285,7 +285,7 @@ class Installer (CWrite):
                 output = check_output('service iptables status', shell=True)[:]
 
                 if output is not None and len(output) > 1 and \
-                                'unrecognized service' not in output and 'Table:' in output:
+                        'unrecognized service' not in output and 'Table:' in output:
                     self._iptables = True
                     self.cwriteline('[OK]', 'Detected running iptables instance.')
 
@@ -298,11 +298,11 @@ class Installer (CWrite):
             # We were unable to detect the running firewall service.  Its a bad thing, but maybe
             # we should let the user decided if they want to continue.
 
-            _logger.warning(_("Unable to detect the running firewall service.  You may continue, but unexpected "
-                              "results can occur if more than one firewall service is running.  This may lead to "
-                              "your machine not being properly secured."))
+            _logger.warning(_("Unable to detect the running firewall service.  You may continue, but "  # noqa
+                              "unexpected results can occur if more than one firewall service is running. "  # noqa
+                              "This may lead to your machine not being properly secured."))  # noqa
 
-            self.cwrite('Do you want to continue with this install? [y/N]:')
+            self.cwrite(_('Do you want to continue with this install? [y/N]:'))  # noqa
             result = sys.stdin.read(1)
 
             if result not in {'y', 'Y'}:
@@ -383,10 +383,10 @@ class Installer (CWrite):
 
             self.cwriteline('[Failed]', 'Unable to find rule bundle named "{0}".'.format(self.args.bundle))
 
-            _logger.warning(_("Unable to find the rule bundle specified. The installer can try to lookup "
-                              "and use the default server rule bundle."))
+            _logger.warning(_("Unable to find the rule bundle specified. The installer can try to lookup "  # noqa
+                              "and use the default server rule bundle."))  # noqa
 
-            self.cwrite('Do you want to use the server default rule bundle or abort install? [y/N]:')
+            self.cwrite(_('Do you want to use the server default rule bundle or abort install? [y/N]:'))  # noqa
             result = sys.stdin.read(1)
 
             if result not in {'y', 'Y'}:
@@ -452,7 +452,7 @@ class Installer (CWrite):
             cmd = '{0} --test < "{1}"'.format(self._iptables_restore, file)
 
             try:
-                output = check_output(cmd, shell=True)
+                check_output(cmd, shell=True)
             except CalledProcessError:
                 self.cwriteline('[Failed]', 'Rule set iptables test failed "{0}"'.format(file))
 
@@ -518,11 +518,6 @@ class Installer (CWrite):
         if not self._download_bundleset():
             return False
 
-
-
-
-
-
         # TODO: Check firewalld service is running and disable.
 
         # TODO: Check iptables services are running and disable.
@@ -564,13 +559,15 @@ def run():
 
     # Setup program arguments.
     parser = argparse.ArgumentParser(prog='sd-client-install')
-    parser.add_argument(_('server'), help=_('Silent Dune server'), default=None, type=str)
-    parser.add_argument('-b', _('--bundle'), help=_('Firewall bundle to use for this node'), default=None, type=str)
-    parser.add_argument('-u', _('--user'), help=_('Server admin user id'), default=None, type=str)
-    parser.add_argument('-p', _('--password'), help=_('Server admin password'), default=None, type=str)
-    parser.add_argument(_('--nossl'), help=_('Do not use an SSL connection'), default=False, action='store_true')
-    parser.add_argument(_('--port'), help=_('Use alternate port'), default=-1, type=int)
-    parser.add_argument(_('--debug'), help=_('Enable debug output'), default=False, action='store_true')
+    parser.add_argument(_('server'), help=_('Silent Dune server'), default=None, type=str)  # noqa
+    parser.add_argument(
+            '-b', _('--bundle'), help=_('Firewall bundle to use for this node'), default=None, type=str)  # noqa
+    parser.add_argument('-u', _('--user'), help=_('Server admin user id'), default=None, type=str)  # noqa
+    parser.add_argument('-p', _('--password'), help=_('Server admin password'), default=None, type=str)  # noqa
+    parser.add_argument(
+            _('--nossl'), help=_('Do not use an SSL connection'), default=False, action='store_true')  # noqa
+    parser.add_argument(_('--port'), help=_('Use alternate port'), default=-1, type=int)  # noqa
+    parser.add_argument(_('--debug'), help=_('Enable debug output'), default=False, action='store_true')  # noqa
     args = parser.parse_args()
 
     # Setup logging now that we know the debug parameter

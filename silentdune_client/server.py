@@ -18,15 +18,13 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
-import io
-import copy
 import os
-import logging
 import socket
 import requests
+import logging
 
 from utilities import CWrite
-from json_models import *
+from json_models import Node, NodeBundle, IPChainSet, Bundle, IPRulesFileWriter
 
 _logger = logging.getLogger('sd-client')
 
@@ -49,7 +47,7 @@ class SDSConnection (CWrite):
 
     def __init__(self, debug, server, nossl, port):
 
-        self.debug = debug        
+        self.debug = debug
         self._server = server
         self._nossl = nossl
         self._port = port
