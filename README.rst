@@ -3,7 +3,7 @@ SilentDune-Client
 =================
 
 
-Add a short description here!
+Client for the Silent Dune Firewall Policy and Audit platform.
 
 
 Description

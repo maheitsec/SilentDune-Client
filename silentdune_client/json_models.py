@@ -372,9 +372,9 @@ class IPChainSet(JsonObject):
     def write(self, stream, version, table, slot, chain, base):
 
         if self.chains is not None:
-            for c in iter(self.chains):  # Call child objects write method.
-                if c.name == table:  # Only call if the table name matches.
-                    c.write(stream, version, table, slot, chain, base)
+            for o in iter(self.chains):  # Call child objects write method.
+                if o.name == table:  # Only call if the table name matches.
+                    o.write(stream, version, table, slot, chain, base)
 
 
 class IPChain(JsonObject):
@@ -413,9 +413,9 @@ class IPChain(JsonObject):
 
         # loop through the IPRing objects and build the iptables chain names.
         if self.rings is not None:
-            for r in iter(self.rings):
-                if r.version == version and r.name.lower() == cname.lower():
-                    cnames[u'{0}{1}'.format(self.get_chain_prefix(r.name), suffix)] = cname  # save base chain name.
+            for o in iter(self.rings):
+                if o.version == version and o.name.lower() == cname.lower():
+                    cnames[u'{0}{1}'.format(self.get_chain_prefix(o.name), suffix)] = cname  # save base chain name.
 
         return cnames
 
@@ -424,8 +424,8 @@ class IPChain(JsonObject):
         Return True if there is a match by version and name
         """
         if self.rings is not None:
-            for r in iter(self.rings):
-                if r.version == version and r.name.upper() == base.upper():
+            for o in iter(self.rings):
+                if o.version == version and o.name.upper() == base.upper():
                     return True
 
         return False
@@ -436,10 +436,10 @@ class IPChain(JsonObject):
         suffix = u'_{0}_{1}'.format(slot, self.id)
 
         if self.rings is not None:
-            for r in iter(self.rings):  # Call child objects write method.
-                n = u'{0}{1}'.format(self.get_chain_prefix(r.name), suffix)
-                if r.version == version and r.name.lower() == base.lower() and chain == n:
-                    r.write(stream, version, suffix, chain)
+            for o in iter(self.rings):  # Call child objects write method.
+                n = u'{0}{1}'.format(self.get_chain_prefix(o.name), suffix)
+                if o.version == version and o.name.lower() == base.lower() and chain == n:
+                    o.write(stream, version, chain)
 
 
 class IPRing(JsonObject):
@@ -455,7 +455,7 @@ class IPRing(JsonObject):
         super(IPRing, self).__init__(args[0], kwargs)
         self.rules = self.dict_to_obj_array(IPRule, self.rules)
 
-    def write(self, stream, version, suffix, chain):
+    def write(self, stream, version, chain):
 
         # Only write out rules if the versions match
         if version == self.version and self.rules is not None:
@@ -465,7 +465,7 @@ class IPRing(JsonObject):
                 s = u'-A {0}'.format(chain)
                 stream.write(s)
 
-                # Write out the rule
+                # Write out the IPRule object's data
                 o.write(stream)
 
                 # Add line feed

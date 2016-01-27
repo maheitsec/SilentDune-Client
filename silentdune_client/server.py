@@ -313,17 +313,19 @@ class SDSConnection (CWrite):
         that table. Chain names are defined by the built-in chain name, slot number and pk id of the IPRing object.
         """
 
+        files = list()
+
         if cs is None:
             _logger.error('Array of chainset objects not valid.')
+            return files
 
         for v in {u'ipv4', u'ipv6'}:
 
-            file = os.path.join(path, u'{0}_rules.txt'.format(v))
+            file = os.path.join(path, u'{0}_rules'.format(v))
+
+            files.append(file)
 
             writer = IPRulesFileWriter(cs)
-
             writer.write_to_file(file, v)
 
-            break
-
-        return True
+        return files

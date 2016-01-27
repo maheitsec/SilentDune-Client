@@ -119,6 +119,25 @@ class Installer (CWrite):
 
         return not self.bad_arg
 
+    def _check_for_external_progs(self):
+
+        # Check for external programs here
+        self._ps = which('ps')
+        self._pgrep = which('pgrep')
+        self._iptables_exec = which('iptables')
+        self._iptables_save = which('iptables-save')
+        self._iptables_restore = which('iptables-restore')
+
+        if self._ps is None or self._pgrep is None:
+            _logger.critical('Unable to determine which services are running on this machine.')
+            return False
+
+        if self._iptables is None or self._iptables_save is None or self._iptables_restore is None:
+            _logger.critical('Unable to find iptables executables.')
+            return False
+
+        return True
+
     def _determine_config_root(self):
         """
         Determine where we are going to write the SD client configuration file.
@@ -401,6 +420,46 @@ class Installer (CWrite):
         self.cwriteline('[OK]', 'Node rule bundle successfully set.')
         return True
 
+    def _download_bundleset(self):
+
+        self.cwrite('Downloading bundle set rules...')
+
+        # Get the chainset IDs assigned to the bundle
+        self._bundle_chainsets = self._sds_conn.get_bundle_chainsets(self._node_bundle)
+        if self._bundle_chainsets is None:
+            return False
+
+        files = self._sds_conn.write_bundle_chainsets(self._config_root, self._bundle_chainsets)
+
+        if len(files) == 0:
+            return False
+
+        self.cwriteline('[OK]', 'Successfully downloaded bundle set rules.')
+
+        if not self._root_user:
+            self.cwriteline('*** Unable to validate rules, not running as privileged user. ***')
+            return True
+
+        self.cwrite('Validating bundle set rules...')
+
+        # Loop through files and test the validity of the file.
+        for file in iter(files):
+
+            if not os.path.exists(file):
+                _logger.critical('Rule file does not exist.')
+                return False
+
+            cmd = '{0} --test < "{1}"'.format(self._iptables_restore, file)
+
+            try:
+                output = check_output(cmd, shell=True)
+            except CalledProcessError:
+                self.cwriteline('[Failed]', 'Rule set iptables test failed "{0}"'.format(file))
+
+        self.cwriteline('[OK]', 'Rule validation successfull.')
+
+        return True
+
     def clean_up(self):
         """
         Use this method to clean up after a failed install
@@ -423,19 +482,7 @@ class Installer (CWrite):
         Begin installing the Silent Dune Client.
         """
 
-        # Check for external programs here
-        self._ps = which('ps')
-        self._pgrep = which('pgrep')
-        self._iptables_exec = which('iptables')
-        self._iptables_save = which('iptables-save')
-        self._iptables_restore = which('iptables-restore')
-
-        if self._ps is None or self._pgrep is None:
-            _logger.critical('Unable to determine which services are running on this machine.')
-            return False
-
-        if self._iptables is None or self._iptables_save is None or self._iptables_restore is None:
-            _logger.critical('Unable to find iptables executables.')
+        if not self._check_for_external_progs():
             return False
 
         if not self._determine_config_root():
@@ -468,14 +515,13 @@ class Installer (CWrite):
         # TODO: Get and Upload adapter interface list to server
         # Note: It might be better to call ifconfig instead of using netifaces to get adapter info.
 
-        # Get the chainset IDs assigned to the bundle
-        self._bundle_chainsets = self._sds_conn.get_bundle_chainsets(self._node_bundle)
-        if self._bundle_chainsets is None:
+        if not self._download_bundleset():
             return False
 
-        self._sds_conn.write_bundle_chainsets('./', self._bundle_chainsets)
 
-        # TODO: Download rule sets from SD Server
+
+
+
 
         # TODO: Check firewalld service is running and disable.
 
@@ -503,7 +549,7 @@ def debug_dump(args):
     _logger.debug('Python Version: {0}'.format(sys.version.replace('\n', '')))
 
 
-def main():
+def run():
 
     # # Figure out our root directory
     # base_path = os.path.dirname(os.path.realpath(sys.argv[0]))
@@ -546,4 +592,4 @@ def main():
 
 # --- Main Program Call ---
 if __name__ == '__main__':
-    sys.exit(main())
+    sys.exit(run())

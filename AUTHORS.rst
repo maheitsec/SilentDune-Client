@@ -2,4 +2,4 @@
 Developers
 ==========
 
-* rabram <robert.abram@loneprairie.com>
+* Robert Abram <robert.abram@loneprairie.com>
