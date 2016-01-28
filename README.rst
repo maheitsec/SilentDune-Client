@@ -9,7 +9,6 @@ Client for the Silent Dune Firewall Policy and Audit platform.
 Description
 ===========
 
-A LONGER DESCRIPTION OF YOUR PROJECT GOES HERE...
 
 
 Note
