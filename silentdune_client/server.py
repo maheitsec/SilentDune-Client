@@ -24,7 +24,7 @@ import requests
 import logging
 
 from utilities import CWrite
-from json_models import Node, NodeBundle, IPChainSet, Bundle, IPRulesFileWriter
+from json_models import Node, NodeBundle, IPMachineSubset, Bundle, IPRulesFileWriter
 
 _logger = logging.getLogger('sd-client')
 
@@ -75,17 +75,17 @@ class SDSConnection (CWrite):
             u = '{0}{1}'.format(self._base_url, url)
 
             if reqtype is 'GET':
-                rq = requests.get(u, cookies=dict(token=self._oauth_crypt_token))
+                rq = requests.get(u, cookies=dict(token=self._oauth_crypt_token), timeout=30)
             elif reqtype is 'POST':
-                rq = requests.post(u, data=data, cookies=dict(token=self._oauth_crypt_token))
+                rq = requests.post(u, data=data, cookies=dict(token=self._oauth_crypt_token), timeout=30)
             elif reqtype is 'PUT':
-                rq = requests.put(u, data=data, cookies=dict(token=self._oauth_crypt_token))
+                rq = requests.put(u, data=data, cookies=dict(token=self._oauth_crypt_token), timeout=30)
             elif reqtype is 'DELETE':
-                rq = requests.delete(u, cookies=dict(token=self._oauth_crypt_token))
+                rq = requests.delete(u, cookies=dict(token=self._oauth_crypt_token), timeout=30)
             elif reqtype is 'HEAD':
-                rq = requests.head(u, cookies=dict(token=self._oauth_crypt_token))
+                rq = requests.head(u, cookies=dict(token=self._oauth_crypt_token), timeout=30)
             elif reqtype is 'OPTIONS':
-                rq = requests.options(u, cookies=dict(token=self._oauth_crypt_token))
+                rq = requests.options(u, cookies=dict(token=self._oauth_crypt_token), timeout=30)
 
         except requests.Timeout:
             _logger.error('Server request timeout.')
@@ -271,32 +271,32 @@ class SDSConnection (CWrite):
 
         return None
 
-    def get_bundle_chainsets(self, nb):
+    def get_bundle_machine_subsets(self, nb):
 
         # if isinstance(nb, NodeBundle):  <-- Not working, unsure why.
         if nb is None:
             _logger.critical('NodeBundle parameter is not valid in create_or_update_node_bundle method.')
             return None
 
-        url = '/api/bundles/{0}/chainsets/'.format(nb.bundle)
+        url = '/api/bundles/{0}/machine_subsets/'.format(nb.bundle)
 
-        # Reply contains dict array of IPBundleChainSet records.
+        # Reply contains dict array of IPMachineSet records.
         reply, status_code, rq = self._make_json_request('GET', url)
 
         ol = list()
 
         if reply is not None and status_code == requests.codes.ok:
 
-            # Iterate over the reply to get our chainset records.
+            # Iterate over the reply to get our machine subset records.
             for o in reply:
 
-                url = '/api/iptables/chainsets/{0}/'.format(o['id'])
+                url = '/api/iptables/machine_subsets/{0}/'.format(o['id'])
 
-                # Reply contains single IPChainSet record.
+                # Reply contains single IPMachineSubset record.
                 reply, status_code, rq = self._make_json_request('GET', url)
 
                 if reply is not None and status_code == requests.codes.ok:
-                    ol.append(IPChainSet(reply))
+                    ol.append(IPMachineSubset(reply))
 
         if len(ol) == 0:
             return None
@@ -320,6 +320,8 @@ class SDSConnection (CWrite):
         for v in {u'ipv4', u'ipv6'}:
 
             file = os.path.join(path, u'{0}_rules'.format(v))
+
+            _logger.debug('Writting {0} rules to -> {1}'.format(v, file))
 
             files.append(file)
 

@@ -425,8 +425,9 @@ class Installer (CWrite):
         self.cwrite('Downloading bundle set rules...')
 
         # Get the chainset IDs assigned to the bundle
-        self._bundle_chainsets = self._sds_conn.get_bundle_chainsets(self._node_bundle)
+        self._bundle_chainsets = self._sds_conn.get_bundle_machine_subsets(self._node_bundle)
         if self._bundle_chainsets is None:
+            self.cwriteline('[Failed]', 'No bundle machine subsets found.')
             return False
 
         files = self._sds_conn.write_bundle_chainsets(self._config_root, self._bundle_chainsets)

@@ -111,9 +111,9 @@ class NodeBundle(JsonObject):
     bundle = None  # Bundle ID value
 
 
-class IPBundleChainSet(JsonObject):
+class IPMachineSet(JsonObject):
     """
-    Represents the IPBundleSetSerializer json schema
+    Represents the IPMachineSetSerializer json schema
     """
     id = None
     chainset = None
@@ -234,7 +234,7 @@ class IPRulesFileWriter(object):
         # Loop through the iptables built-in table names.
         for c in chains:
             for cs in self._chainsets:
-                if cs.check_for_chainset_rules(version, table, c):
+                if cs.check_for_machinesubset_rules(version, table, c):
                     return True  # Return true if we found a rule.
 
         return False
@@ -243,23 +243,25 @@ class IPRulesFileWriter(object):
         """
         Write iptables rules to a stream.
         :param stream: File stream stream
+        :param version: Transport Version
         :return: True if successful or False if failure.
         """
-        return self._output_rules(stream)
+        return self._output_rules(stream, version)
 
     def write_to_file(self, file, version):
         """
         Write iptables rules to a stream.
         :param file: String with file path and name to write iptables rules to.
+        :param version: Transport Version
         :return: True if successful or False if failure.
         """
         with io.open(file, 'w') as stream:
             return self._output_rules(stream, version)
 
 
-class IPChainSet(JsonObject):
+class IPMachineSubset(JsonObject):
     """
-    Represents the IPChainSetSerializer json schema
+    Represents the IPMachineSubsetSerializer json schema
     """
     id = None  # PK value
     name = None
@@ -271,10 +273,10 @@ class IPChainSet(JsonObject):
     chains = None  # Array of IPChain objects
 
     def __init__(self, *args, **kwargs):
-        super(IPChainSet, self).__init__(args[0], kwargs)
+        super(IPMachineSubset, self).__init__(args[0], kwargs)
         self.chains = self.dict_to_obj_array(IPChain, self.chains)
 
-    def check_for_chainset_rules(self, version, table, base):
+    def check_for_machinesubset_rules(self, version, table, base):
 
         if self.chains is not None:
             for c in iter(self.chains):  # Call child objects write_chain method.
@@ -394,48 +396,68 @@ class IPRule(JsonObject):
     enabled = None  # Is rule active
     sortId = None
     desc = None
-    ifaceIn = None  # single IPIFaceIn object
-    ifaceOut = None  # single IPIFaceOut object
-    protocol = None  # Array of IPProtocol objects
-    source = None  # Array of IPSource objects
-    destination = None  # Array of IPDestination objects
-    fragment = None  # Single IPFragment object
+
+    ifacein_name = None
+    ifacein_invert = None
+    ifaceout_name = None
+    ifaceout_invert = None
+    ip_protocol_name = None
+    ip_protocol_invert = None
+    source_address = None
+    source_mask = None
+    source_invert = None
+    dest_address = None
+    dest_mask = None
+    dest_invert = None
+    fragment = None
+    fragment_invert = None
+
+    # ifaceIn = None  # single IPIFaceIn object
+    # ifaceOut = None  # single IPIFaceOut object
+    # protocol = None  # Array of IPProtocol objects
+    # source = None  # Array of IPSource objects
+    # destination = None  # Array of IPDestination objects
+    # fragment = None  # Single IPFragment object
     matches = None  # Array of IPMatches objects
     jump = None  # Single IPJump object
 
     def __init__(self, *args, **kwargs):
         super(IPRule, self).__init__(args[0], kwargs)
-        self.ifaceIn = None if self.ifaceIn is None else IPIFaceIn(self.ifaceIn)
-        self.ifaceOut = None if self.ifaceOut is None else IPIFaceOut(self.ifaceOut)
-        self.protocol = self.dict_to_obj_array(IPProtocol, self.protocol)
-        self.source = self.dict_to_obj_array(IPSource, self.source)
-        self.destination = self.dict_to_obj_array(IPDestination, self.destination)
-        self.fragment = None if self.fragment is None else IPFragment(self.fragment)
+        # self.ifaceIn = None if self.ifaceIn is None else IPIFaceIn(self.ifaceIn)
+        # self.ifaceOut = None if self.ifaceOut is None else IPIFaceOut(self.ifaceOut)
+        # self.protocol = self.dict_to_obj_array(IPProtocol, self.protocol)
+        # self.source = self.dict_to_obj_array(IPSource, self.source)
+        # self.destination = self.dict_to_obj_array(IPDestination, self.destination)
+        # self.fragment = None if self.fragment is None else IPFragment(self.fragment)
         self.matches = self.dict_to_obj_array(IPMatch, self.matches)
         self.jump = None if self.jump is None else IPJump(self.jump)
 
     def write(self, stream):
 
-        if self.fragment is not None and self.fragment.id is not None:
-            self.fragment.write(stream)
+        if self.fragment is True:
+            s = u' {0}-f'.format(u'! ' if self.fragment_invert is True else u'')
+            stream.write(s)
 
-        if self.ifaceIn is not None and self.ifaceIn.id is not None:
-            self.ifaceIn.write(stream)
+        if self.ifacein_name:
+            s = u' -i{0} {1}'.format(u' !' if self.ifacein_invert is True else u'', self.ifacein_name)
+            stream.write(s)
 
-        if self.ifaceOut is not None and self.ifaceOut.id is not None:
-            self.ifaceOut.write(stream)
+        if self.ifaceout_name:
+            s = u' -o{0} {1}'.format(u' !' if self.ifaceout_invert is True else u'', self.ifaceout_name)
+            stream.write(s)
 
-        if self.protocol is not None:  # Call child objects write method.
-            for o in iter(self.protocol):
-                o.write(stream)
+        if self.ip_protocol_name:
+            s = u' -p{0} {1}'.format(u' !' if self.ip_protocol_invert is True else u'', self.ip_protocol_name)
+            stream.write(s)
 
-        if self.source is not None:  # Call child objects write method.
-            for o in iter(self.source):
-                o.write(stream)
+        if self.source_address:
+            s = u' -s{0} {1}/{2}'.format(u' !' if self.source_invert is True
+                                         else u'', self.source_address, self.source_mask)
+            stream.write(s)
 
-        if self.destination is not None:  # Call child objects write method.
-            for o in iter(self.destination):
-                o.write(stream)
+        if self.dest_address:
+            s = u' -d{0} {1}/{2}'.format(u' !' if self.dest_invert is True else u'', self.dest_address, self.dest_mask)
+            stream.write(s)
 
         if self.matches is not None:  # Call child objects write method.
             for o in iter(self.matches):
@@ -443,62 +465,6 @@ class IPRule(JsonObject):
 
         if self.jump is not None and self.jump.id is not None:
             self.jump.write(stream)
-
-
-class IPFragment(JsonObject):
-    """
-    Represents the IPFragmentSerializer json schema
-    """
-    id = None  # PK value
-    fragment = None  # Fragment packet
-    invert = None  # Invert value
-
-    def write(self, stream):
-
-        if self.fragment is True:
-            s = u' {0}-f'.format(u'! ' if self.invert is True else u'')
-            stream.write(s)
-
-
-class IPProtocol(JsonObject):
-    """
-    Represents the IPProtocolSerializer json schema
-    """
-    id = None  # PK value
-    name = None
-    invert = None  # Invert name value
-
-    def write(self, stream):
-        s = u' -p{0} {1}'.format(u' !' if self.invert is True else u'', self.name)
-        stream.write(s)
-
-
-class IPSource(JsonObject):
-    """
-    Represents the IPSourceSerializer json schema
-    """
-    id = None  # PK value
-    address = None  # Network address
-    mask = None  # Network mask value
-    invert = None  # Invert address value
-
-    def write(self, stream):
-        s = u' -s{0} {1}/{2}'.format(u' !' if self.invert is True else u'', self.address, self.mask)
-        stream.write(s)
-
-
-class IPDestination(JsonObject):
-    """
-    Represents the IPDestinationSerializer json schema
-    """
-    id = None  # PK value
-    address = None  # Network address
-    mask = None  # Network mask value
-    invert = None  # Invert address value
-
-    def write(self, stream):
-        s = u' -d{0} {1}/{2}'.format(u' !' if self.invert is True else u'', self.address, self.mask)
-        stream.write(s)
 
 
 class IPMatch(JsonObject):
@@ -536,32 +502,6 @@ class IPMatchOptions(JsonObject):
         stream.write(s)
 
 
-class IPIFaceOut(JsonObject):
-    """
-    Represents the IPIFaceOutSerializer json schema
-    """
-    id = None  # PK value
-    name = None  # Match name
-    invert = None  # Invert name value
-
-    def write(self, stream):
-        s = u' -o{0} {1}'.format(u' !' if self.invert is True else u'', self.name)
-        stream.write(s)
-
-
-class IPIFaceIn(JsonObject):
-    """
-    Represents the IPIFaceInSerializer json schema
-    """
-    id = None  # PK value
-    name = None  # Match name
-    invert = None  # Invert name value
-
-    def write(self, stream):
-        s = u' -i{0} {1}'.format(u' !' if self.invert is True else u'', self.name)
-        stream.write(s)
-
-
 class IPJump(JsonObject):
     """
     Represents the IPJumpSerializer json schema
@@ -593,3 +533,87 @@ class IPJumpOptions(JsonObject):
     def write(self, stream):
         s = u' {0} {1}'.format(self.name, self.value)
         stream.write(s)
+
+
+# class IPFragment(JsonObject):
+#     """
+#     Represents the IPFragmentSerializer json schema
+#     """
+#     id = None  # PK value
+#     fragment = None  # Fragment packet
+#     invert = None  # Invert value
+#
+#     def write(self, stream):
+#
+#         if self.fragment is True:
+#             s = u' {0}-f'.format(u'! ' if self.invert is True else u'')
+#             stream.write(s)
+
+
+# class IPProtocol(JsonObject):
+#     """
+#     Represents the IPProtocolSerializer json schema
+#     """
+#     id = None  # PK value
+#     name = None
+#     invert = None  # Invert name value
+#
+#     def write(self, stream):
+#         s = u' -p{0} {1}'.format(u' !' if self.invert is True else u'', self.name)
+#         stream.write(s)
+#
+#
+# class IPSource(JsonObject):
+#     """
+#     Represents the IPSourceSerializer json schema
+#     """
+#     id = None  # PK value
+#     address = None  # Network address
+#     mask = None  # Network mask value
+#     invert = None  # Invert address value
+#
+#     def write(self, stream):
+#         s = u' -s{0} {1}/{2}'.format(u' !' if self.invert is True else u'', self.address, self.mask)
+#         stream.write(s)
+#
+#
+# class IPDestination(JsonObject):
+#     """
+#     Represents the IPDestinationSerializer json schema
+#     """
+#     id = None  # PK value
+#     address = None  # Network address
+#     mask = None  # Network mask value
+#     invert = None  # Invert address value
+#
+#     def write(self, stream):
+#         s = u' -d{0} {1}/{2}'.format(u' !' if self.invert is True else u'', self.address, self.mask)
+#         stream.write(s)
+
+
+# class IPIFaceOut(JsonObject):
+#     """
+#     Represents the IPIFaceOutSerializer json schema
+#     """
+#     id = None  # PK value
+#     name = None  # Match name
+#     invert = None  # Invert name value
+#
+#     def write(self, stream):
+#         s = u' -o{0} {1}'.format(u' !' if self.invert is True else u'', self.name)
+#         stream.write(s)
+#
+#
+# class IPIFaceIn(JsonObject):
+#     """
+#     Represents the IPIFaceInSerializer json schema
+#     """
+#     id = None  # PK value
+#     name = None  # Match name
+#     invert = None  # Invert name value
+#
+#     def write(self, stream):
+#         s = u' -i{0} {1}'.format(u' !' if self.invert is True else u'', self.name)
+#         stream.write(s)
+
+
