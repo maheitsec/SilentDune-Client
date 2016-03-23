@@ -65,7 +65,7 @@ class Installer (CWrite):
     _root_user = False
     _config_root = None
     _config_p = None
-    _machine_id = ''.join(random.choice('abcdef'+string.digits) for _ in range(32))
+    _machine_id = ''.join(random.choice('abcdef' + string.digits) for _ in range(32))
 
     # Upstart
     _ups_installed = False
@@ -348,13 +348,13 @@ class Installer (CWrite):
             self.cwrite('Registering Node...  ')
 
             nobj = Node(
-                    platform=self._firewall_platform,
-                    os=platform.system().lower(),
-                    dist=platform.dist()[0],
-                    dist_version=platform.dist()[1],
-                    hostname=socket.gethostname(),
-                    python_version=sys.version.replace('\n', ''),
-                    machine_id=self._machine_id,
+                platform=self._firewall_platform,
+                os=platform.system().lower(),
+                dist=platform.dist()[0],
+                dist_version=platform.dist()[1],
+                hostname=socket.gethostname(),
+                python_version=sys.version.replace('\n', ''),
+                machine_id=self._machine_id,
             )
 
             # Attempt to register this node on the SD server.
