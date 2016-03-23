@@ -21,6 +21,12 @@
 import os
 import sys
 import logging
+import platform
+
+try:
+    from configparser import ConfigParser
+except ImportError:
+    from ConfigParser import ConfigParser  # ver. < 3.0
 
 _logger = logging.getLogger('sd-client')
 
@@ -98,3 +104,121 @@ def setup_logging(debug=False):
     # _logger.addHandler(handler)
 
     return handler
+
+
+def debug_dump(args):
+    """
+    Output the system information.
+    """
+    _logger.debug(args)
+
+    # Basic system detections
+    _logger.debug('System = {0}'.format(platform.system()))
+
+    # Current distribution
+    _logger.debug('Distribution = {0}'.format(platform.dist()[0]))
+    _logger.debug('Distribution Version = {0}'.format(platform.dist()[1]))
+
+    # Python version
+    _logger.debug('Python Version: {0}'.format(sys.version.replace('\n', '')))
+
+
+def determine_config_root():
+    """
+    Determine where we are going to write the SD client configuration file.
+    """
+
+    home = os.path.expanduser('~')
+    root_failed = False
+    home_failed = False
+
+    config_root = '/etc/silentdune'
+
+    # Test to see if we are running as root
+    if os.getuid() == 0:
+        test_file = os.path.join(config_root, 'test.tmp')
+
+        try:
+            if not os.path.exists(config_root):
+                os.makedirs(config_root)
+            h = open(test_file, 'w')
+            h.close()
+            os.remove(test_file)
+
+        except OSError:
+            root_failed = True
+
+    else:
+        root_failed = True
+
+    # If root access has failed, try the current user's home directory
+    if root_failed:
+        config_root = os.path.join(home, '.silentdune')
+        test_file = os.path.join(config_root, 'test.tmp')
+
+        try:
+            if not os.path.exists(config_root):
+                os.makedirs(config_root)
+            h = open(test_file, 'w')
+            h.close()
+            os.remove(test_file)
+
+        except OSError:
+            home_failed = True
+
+    # Check if both locations failed.
+    if root_failed and home_failed:
+        _logger.critical('Unable to determine a writable configuration path for the client.')
+        return None
+
+    if root_failed and not home_failed:
+        _logger.warning('Not running as root, setting configuration path to "{0}"'.format(config_root))
+        _logger.warning('Since we are not running as root, system firewall settings will not be changed.')
+
+        _logger.debug('Configuration root set to "{0}"'.format(config_root))
+
+    return config_root
+
+
+def read_config_file(file):
+    """
+    Read the configuration file
+    """
+
+    config = ConfigParser()
+
+    # If empty parameter, figure out the location of the configuration file.
+    if not file:
+        file = os.path.join(determine_config_root(), 'sdc.conf')
+
+    if os.path.isfile(file):
+        config.read(file)
+        _logger.debug('Using config file: {0}'.format(file))
+        return config
+    else:
+        _logger.error('Config file ({0}) not found'.format(file))
+
+    return None
+
+
+def write_config_file(obj, include, file=None):
+    """
+    Write the configuration file from the object, only writing out the values from the include list.
+    """
+
+    config = ConfigParser()
+    config.add_section('Client')
+
+    for attr, value in obj.__dict__.items():
+        if attr in include:
+            config.set('Client', attr, value if value else '')
+
+    # If empty parameter, figure out the location of the configuration file.
+    if not file:
+        file = os.path.join(determine_config_root(), 'sdc.conf')
+
+    with open(file, 'wb') as h:
+        config.write(h)
+
+    return config
+

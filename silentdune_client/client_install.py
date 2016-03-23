@@ -30,17 +30,12 @@ import string
 import sys
 from subprocess import check_output, CalledProcessError
 
-from utilities import which, setup_logging, CWrite
+from utilities import *
 
 from server import SDSConnection
 from json_models import Node, NodeBundle
 
 _logger = logging.getLogger('sd-client')
-
-try:
-    from configparser import ConfigParser
-except ImportError:
-    from ConfigParser import ConfigParser  # ver. < 3.0
 
 
 class Installer (CWrite):
@@ -88,7 +83,11 @@ class Installer (CWrite):
     _node = None
     _bundle = None
     _node_bundle = None
-    _bundle_chainsets = None
+    _bundle_machine_subsets = None
+
+    # List of properties which are written in the configuration file.
+    _config_include = ['_root_user', '_machine_id', '_ups_installed', '_sysd_installed', '_sysv_installed', '_ufw',
+                       '_firewalld', '_iptables', '_firewall_platform']
 
     def __init__(self, args):
 
@@ -138,63 +137,6 @@ class Installer (CWrite):
 
         return True
 
-    def _determine_config_root(self):
-        """
-        Determine where we are going to write the SD client configuration file.
-        """
-
-        home = os.path.expanduser('~')
-        root_failed = False
-        home_failed = False
-
-        self._config_root = '/etc/silentdune'
-
-        # Test to see if we are running as root
-        if os.getuid() == 0:
-            test_file = os.path.join(self._config_root, 'test.tmp')
-
-            try:
-                if not os.path.exists(self._config_root):
-                    os.makedirs(self._config_root)
-                h = open(test_file, 'w')
-                h.close()
-                os.remove(test_file)
-
-            except OSError:
-                root_failed = True
-
-            self._root_user = True
-
-        else:
-            root_failed = True
-
-        # If root access has failed, try the current user's home directory
-        if root_failed:
-            self._config_root = os.path.join(home, '.silentdune')
-            test_file = os.path.join(self._config_root, 'test.tmp')
-
-            try:
-                if not os.path.exists(self._config_root):
-                    os.makedirs(self._config_root)
-                h = open(test_file, 'w')
-                h.close()
-                os.remove(test_file)
-
-            except OSError:
-                home_failed = True
-
-        # Check if both locations failed.
-        if root_failed and home_failed:
-            _logger.critical('Unable to determine a writable configuration path for the client.')
-            return False
-
-        if root_failed and not home_failed:
-            _logger.warning('Not running as root, setting configuration path to "{0}"'.format(self._config_root))
-            _logger.warning('Since we are not running as root, system firewall settings will not be changed.')
-
-            _logger.debug('Configuration root set to "{0}"'.format(self._config_root))
-
-        return True
 
     def _init_system_check(self):
         """
@@ -425,12 +367,12 @@ class Installer (CWrite):
         self.cwrite('Downloading bundle set rules...')
 
         # Get the chainset IDs assigned to the bundle
-        self._bundle_chainsets = self._sds_conn.get_bundle_machine_subsets(self._node_bundle)
-        if self._bundle_chainsets is None:
+        self._bundle_machine_subsets = self._sds_conn.get_bundle_machine_subsets(self._node_bundle)
+        if self._bundle_machine_subsets is None:
             self.cwriteline('[Failed]', 'No bundle machine subsets found.')
             return False
 
-        files = self._sds_conn.write_bundle_chainsets(self._config_root, self._bundle_chainsets)
+        files = self._sds_conn.write_bundle_chainsets(self._config_root, self._bundle_machine_subsets)
 
         if len(files) == 0:
             return False
@@ -486,7 +428,8 @@ class Installer (CWrite):
         if not self._check_for_external_progs():
             return False
 
-        if not self._determine_config_root():
+        self._config_root = determine_config_root()
+        if not self._config_root:
             return False
 
         if not self._get_machine_id():
@@ -519,6 +462,8 @@ class Installer (CWrite):
         if not self._download_bundleset():
             return False
 
+        write_config_file(self, self._config_include)
+
         # TODO: Check firewalld service is running and disable.
 
         # TODO: Check iptables services are running and disable.
@@ -526,23 +471,6 @@ class Installer (CWrite):
         # TODO: Enable SD-Client service and start service
 
         return True
-
-
-def debug_dump(args):
-    """
-    Output the system information.
-    """
-    _logger.debug(args)
-
-    # Basic system detections
-    _logger.debug('System = {0}'.format(platform.system()))
-
-    # Current distribution
-    _logger.debug('Distribution = {0}'.format(platform.dist()[0]))
-    _logger.debug('Distribution Version = {0}'.format(platform.dist()[1]))
-
-    # Python version
-    _logger.debug('Python Version: {0}'.format(sys.version.replace('\n', '')))
 
 
 def run():
@@ -559,7 +487,7 @@ def run():
     gettext.install('sdc_install', **kwargs)
 
     # Setup program arguments.
-    parser = argparse.ArgumentParser(prog='sd-client-install')
+    parser = argparse.ArgumentParser(prog='sdc-install')
     parser.add_argument(_('server'), help=_('Silent Dune server'), default=None, type=str)  # noqa
     parser.add_argument(
             '-b', _('--bundle'), help=_('Firewall bundle to use for this node'), default=None, type=str)  # noqa

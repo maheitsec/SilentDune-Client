@@ -145,12 +145,8 @@ class Daemon:
         """
         Start the daemon
         """
-        # check to see if the log path exists
-        # path = os.path.dirname(parm['Default']['logfile'])
-        # os.makedirs(path, exist_ok=True)
 
         # Check for a pidfile to see if the daemon already runs
-
         pid = None
 
         if os.path.isfile(self.pidfile):
