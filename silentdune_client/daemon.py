@@ -35,7 +35,7 @@ import os
 import pwd
 import sys
 import time
-from signal import SIGTERM, SIGKILL
+from signal import SIGTERM
 
 _logger = logging.getLogger('sd-client')
 

@@ -20,16 +20,21 @@
 
 import argparse
 import gettext
-import requests
+import logging
+import os
+import platform
 import shutil
 import socket
+import sys
 from subprocess import check_output, CalledProcessError
 
-from utilities import *
-from configuration import SDCConfig
+import requests
 
-from server import SDSConnection
+from configuration import SDCConfig
 from json_models import Node, NodeBundle
+from server import SDSConnection
+from utilities import CWrite, which, get_machine_id, debug_dump, \
+    setup_logging, determine_config_root, write_machine_id
 
 try:
     from configparser import ConfigParser
@@ -39,8 +44,7 @@ except ImportError:
 _logger = logging.getLogger('sd-client')
 
 
-class Installer (CWrite):
-
+class Installer(CWrite):
     # parser args
     args = None
     bad_arg = False
@@ -90,7 +94,7 @@ class Installer (CWrite):
 
         self._config_p = ConfigParser(allow_no_value=True)
         self.args = args
-        self.debug = args.debug   # Save debug value for cwrite methods.
+        self.debug = args.debug  # Save debug value for cwrite methods.
         self._sds_conn = SDSConnection(args.debug, args.server, args.no_tls, args.port)
 
     def _check_args(self):
@@ -390,7 +394,6 @@ class Installer (CWrite):
         # Check to see if we are using a home directory.
         home = os.path.join(os.path.expanduser('~'), '.silentdune')
         if self._config_root == home:
-
             # Change the default path for pid and log file to home directory.
             config.set('settings', 'pidfile', os.path.join(home, 'sdc.pid'))
             config.set('settings', 'logfile', os.path.join(home, 'sdc.log'))
@@ -494,7 +497,6 @@ class Installer (CWrite):
 
 
 def run():
-
     # # Figure out our root directory
     # base_path = os.path.dirname(os.path.realpath(sys.argv[0]))
     # if '/install' in base_path:
@@ -510,11 +512,11 @@ def run():
     parser = argparse.ArgumentParser(prog='sdc-install')
     parser.add_argument(_('server'), help=_('Silent Dune server'), default=None, type=str)  # noqa
     parser.add_argument(
-            '-b', _('--bundle'), help=_('Firewall bundle to use for this node'), default=None, type=str)  # noqa
+        '-b', _('--bundle'), help=_('Firewall bundle to use for this node'), default=None, type=str)  # noqa
     parser.add_argument('-u', _('--user'), help=_('Server admin user id'), default=None, type=str)  # noqa
     parser.add_argument('-p', _('--password'), help=_('Server admin password'), default=None, type=str)  # noqa
     parser.add_argument(
-            _('--no-tls'), help=_('Do not use an secure connection'), default=False, action='store_true')  # noqa
+        _('--no-tls'), help=_('Do not use an secure connection'), default=False, action='store_true')  # noqa
     parser.add_argument(_('--port'), help=_('Use alternate http port'), default=-1, type=int)  # noqa
     parser.add_argument(_('--debug'), help=_('Enable debug output'), default=False, action='store_true')  # noqa
     args = parser.parse_args()

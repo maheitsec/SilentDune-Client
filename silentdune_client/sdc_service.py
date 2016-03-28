@@ -18,27 +18,20 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
-import sys
-import os
-import socket
-import logging
-import signal
 import argparse
 import gettext
+import logging
 import multiprocessing
+import os
+import signal
+import sys
 import time
 
 from configuration import SDCConfig
-
 from daemon import Daemon
-from utilities import *
+from utilities import setup_logging, debug_dump
 
 _logger = logging.getLogger('sd-client')
-
-try:
-    from configparser import ConfigParser
-except ImportError:
-    from ConfigParser import ConfigParser  # ver. < 3.0
 
 
 def run():
