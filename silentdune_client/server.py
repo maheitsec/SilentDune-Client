@@ -39,23 +39,23 @@ class SDSConnection (CWrite):
     # Connection Information
     _server = None
     _base_url = None
-    _nossl = False
+    _no_tls = False
     _port = -1
     _user = None
     _password = None
     _ip = None
 
-    def __init__(self, debug, server, nossl, port):
+    def __init__(self, debug, server, no_tls, port):
 
         self.debug = debug
         self._server = server
-        self._nossl = nossl
+        self._no_tls = no_tls
         self._port = port
 
     def _build_base_url(self):
 
         # Build base URL
-        self._base_url = 'https://' if not self._nossl else 'http://'
+        self._base_url = 'https://' if not self._no_tls else 'http://'
         self._base_url += self._server
         self._base_url += '' if self._port == -1 else ':{0}'.format(self._port)
 
@@ -192,12 +192,16 @@ class SDSConnection (CWrite):
         # Reply contains dict array of Node records.  Reply array should be empty or contain one Node record.
         reply, status_code, rq = self._make_json_request('GET', url)
 
-        if status_code == requests.codes.ok and reply is not None and len(reply) != 0:
-            return Node(reply[0])
+        # If we have a good code and no data, then the node has not been registered yet.
+        if status_code == requests.codes.ok:
+            if reply is not None and len(reply) != 0:
+                return Node(reply[0]), status_code
+
+            return None, status_code
 
         _logger.error('Node lookup request failed.')
 
-        return None
+        return None, requests.codes.teapot
 
     def register_node(self, node):
         """
@@ -207,7 +211,7 @@ class SDSConnection (CWrite):
         """
         if not isinstance(node, Node):
             _logger.critical('Node parameter is not valid in register_node method.')
-            return None
+            return None, requests.codes.teapot
 
         # Reply contains single Node record
         reply, status_code, rq = self._make_json_request('POST', '/api/nodes/', node.to_dict())
@@ -216,9 +220,9 @@ class SDSConnection (CWrite):
 
             # 201 means the node record was created successfully.
             if status_code == requests.codes.created:
-                return Node(reply)
+                return Node(reply), status_code
 
-        return None
+        return None, requests.codes.teapot
 
     def get_bundle_by_name(self, name):
         """
@@ -232,9 +236,9 @@ class SDSConnection (CWrite):
         reply, status_code, rq = self._make_json_request('GET', url)
 
         if reply is not None and status_code == requests.codes.ok and len(reply) > 0:
-            return Bundle(reply[0])
+            return Bundle(reply[0]), status_code
 
-        return None
+        return None, requests.codes.teapot
 
     def get_default_bundle(self):
         """
@@ -249,16 +253,16 @@ class SDSConnection (CWrite):
         reply, status_code, rq = self._make_json_request('GET', url)
 
         if reply is not None and status_code == requests.codes.ok and len(reply) > 0:
-            return Bundle(reply[0])
+            return Bundle(reply[0]), status_code
 
-        return None
+        return None, requests.codes.teapot
 
     def create_or_update_node_bundle(self, nb):
 
         # if isinstance(nb, NodeBundle):  <-- Not working, unsure why.
         if nb is None:
             _logger.critical('NodeBundle parameter is not valid in create_or_update_node_bundle method.')
-            return None
+            return None, requests.codes.teapot
 
         url = '/api/nodes/{0}/bundle/'.format(nb.node)
 
@@ -267,16 +271,16 @@ class SDSConnection (CWrite):
 
         if reply is not None and \
                 (status_code == requests.codes.created or status_code == requests.codes.ok):
-            return NodeBundle(reply)
+            return NodeBundle(reply), status_code
 
-        return None
+        return None, requests.codes.teapot
 
     def get_bundle_machine_subsets(self, nb):
 
         # if isinstance(nb, NodeBundle):  <-- Not working, unsure why.
         if nb is None:
             _logger.critical('NodeBundle parameter is not valid in create_or_update_node_bundle method.')
-            return None
+            return None, requests.codes.teapot
 
         url = '/api/bundles/{0}/machine_subsets/'.format(nb.bundle)
 
@@ -299,9 +303,9 @@ class SDSConnection (CWrite):
                     ol.append(IPMachineSubset(reply))
 
         if len(ol) == 0:
-            return None
+            return None, requests.codes.teapot
 
-        return ol
+        return ol, status_code
 
     def write_bundle_chainsets(self, path, cs):
         """

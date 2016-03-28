@@ -20,20 +20,21 @@
 
 import argparse
 import gettext
-import logging
-import os
-import platform
-import random
+import requests
 import shutil
 import socket
-import string
-import sys
 from subprocess import check_output, CalledProcessError
 
 from utilities import *
+from configuration import SDCConfig
 
 from server import SDSConnection
 from json_models import Node, NodeBundle
+
+try:
+    from configparser import ConfigParser
+except ImportError:
+    from ConfigParser import ConfigParser  # ver. < 3.0
 
 _logger = logging.getLogger('sd-client')
 
@@ -60,7 +61,7 @@ class Installer (CWrite):
     _root_user = False
     _config_root = None
     _config_p = None
-    _machine_id = ''.join(random.choice('abcdef' + string.digits) for _ in range(32))
+    _machine_id = None
 
     # Upstart
     _ups_installed = False
@@ -71,7 +72,7 @@ class Installer (CWrite):
     # sysvinit
     _sysv_installed = False
 
-    # Current firewall service
+    # Previous firewall service
     _ufw = False
     _firewalld = False
     _iptables = False
@@ -85,16 +86,12 @@ class Installer (CWrite):
     _node_bundle = None
     _bundle_machine_subsets = None
 
-    # List of properties which are written in the configuration file.
-    _config_include = ['_root_user', '_machine_id', '_ups_installed', '_sysd_installed', '_sysv_installed', '_ufw',
-                       '_firewalld', '_iptables', '_firewall_platform']
-
     def __init__(self, args):
 
         self._config_p = ConfigParser(allow_no_value=True)
         self.args = args
         self.debug = args.debug   # Save debug value for cwrite methods.
-        self._sds_conn = SDSConnection(args.debug, args.server, args.nossl, args.port)
+        self._sds_conn = SDSConnection(args.debug, args.server, args.no_tls, args.port)
 
     def _check_args(self):
         """
@@ -136,7 +133,6 @@ class Installer (CWrite):
             return False
 
         return True
-
 
     def _init_system_check(self):
         """
@@ -182,12 +178,12 @@ class Installer (CWrite):
 
             prog = which('ufw')
 
-            if prog is not None:
+            if prog:
 
                 try:
                     pid = check_output('{0} -f "{1}"'.format(pgrep, prog), shell=True)[:]
 
-                    if pid is not None and len(pid) > 1:
+                    if pid and len(pid) > 1:
                         self._ufw = True
                         self.cwriteline('[OK]', 'Detected running ufw (uncomplicated firewall) instance.')
 
@@ -202,12 +198,12 @@ class Installer (CWrite):
 
             prog = which('firewalld')
 
-            if prog is not None:
+            if prog:
 
                 try:
                     pid = check_output('{0} -f "{1}"'.format(pgrep, prog), shell=True)[:]
 
-                    if pid is not None and len(pid) > 1:
+                    if pid and len(pid) > 1:
                         self._firewalld = True
                         self.cwriteline('[OK]', 'Detected running firewalld instance.')
 
@@ -226,7 +222,7 @@ class Installer (CWrite):
             try:
                 output = check_output('service iptables status', shell=True)[:]
 
-                if output is not None and len(output) > 1 and \
+                if output and len(output) > 1 and \
                         'unrecognized service' not in output and 'Table:' in output:
                     self._iptables = True
                     self.cwriteline('[OK]', 'Detected running iptables instance.')
@@ -253,36 +249,15 @@ class Installer (CWrite):
 
         return True
 
-    def _get_machine_id(self):
-        """
-        Find the machine unique identifier or generate one for this machine.
-        """
-
-        tmp_id = None
-
-        _logger.debug('Looking up the machine-id value.')
-
-        # See if we can find a machine-id file on this machine
-        for p in ['/etc/machine-id', '/var/lib/dbus/machine-id']:
-            if os.path.isfile(p):
-                with open(p) as h:
-                    tmp_id = h.readline().strip('\n')
-
-        # If we don't find an existing machine-id, write our new one out to self._config_root/machine-id
-        if tmp_id is not None and len(tmp_id) > 24:
-            self._machine_id = tmp_id
-        else:
-            with open(os.path.join(self._config_root, 'machine-id'), 'w') as h:
-                h.write(self._machine_id + '\n')
-
-        return True
-
     def _register_node(self):
 
         # Look for existing Node record first.
-        self._node = self._sds_conn.get_node_by_machine_id(self._machine_id)
+        self._node, status_code = self._sds_conn.get_node_by_machine_id(self._machine_id)
 
-        if self._node is not None:
+        if status_code != requests.codes.ok:
+            return False
+
+        if self._node:
             _logger.warning('Node already registered, using previously registered node information.')
             # TODO: Maybe we should query the user here. Multiple nodes with the same machine_id will be a problem.
         else:
@@ -300,7 +275,7 @@ class Installer (CWrite):
             )
 
             # Attempt to register this node on the SD server.
-            self._node = self._sds_conn.register_node(nobj)
+            self._node, status_code = self._sds_conn.register_node(nobj)
 
             if not self._node or self._node.id is None:
                 self.cwriteline('[Failed]', 'Register Node failed, unknown reason.')
@@ -312,11 +287,11 @@ class Installer (CWrite):
 
     def _get_rule_bundle(self):
 
-        if self.args.bundle is not None:
+        if self.args.bundle:
 
             self.cwrite('Looking up rule bundle...')
 
-            self._bundle = self._sds_conn.get_bundle_by_name(self.args.bundle)
+            self._bundle, status_code = self._sds_conn.get_bundle_by_name(self.args.bundle)
 
             if self._bundle and self._bundle.id > 0:
                 self.cwriteline('[OK]', 'Found rule bundle.')
@@ -328,7 +303,7 @@ class Installer (CWrite):
             _logger.warning(_("Unable to find the rule bundle specified. The installer can try to lookup "  # noqa
                               "and use the default server rule bundle."))  # noqa
 
-            self.cwrite(_('Do you want to use the server default rule bundle or abort install? [y/N]:'))  # noqa
+            self.cwrite(_('Do you want to use the server default rule bundle? [y/N]:'))  # noqa
             result = sys.stdin.read(1)
 
             if result not in {'y', 'Y'}:
@@ -337,7 +312,7 @@ class Installer (CWrite):
 
         self.cwrite('Looking up the server default rule bundle...')
 
-        self._bundle = self._sds_conn.get_default_bundle()
+        self._bundle, status_code = self._sds_conn.get_default_bundle()
 
         if not self._bundle or self._bundle.id is None:
             self.cwriteline('[Failed]', 'Default bundle lookup failed.')
@@ -353,7 +328,7 @@ class Installer (CWrite):
 
         data = NodeBundle(node=self._node.id, bundle=self._bundle.id)
 
-        self._node_bundle = self._sds_conn.create_or_update_node_bundle(data)
+        self._node_bundle, status_code = self._sds_conn.create_or_update_node_bundle(data)
 
         if not self._node_bundle:
             self.cwriteline('[Failed]', 'Unable to set Node rule bundle.')
@@ -367,7 +342,7 @@ class Installer (CWrite):
         self.cwrite('Downloading bundle set rules...')
 
         # Get the chainset IDs assigned to the bundle
-        self._bundle_machine_subsets = self._sds_conn.get_bundle_machine_subsets(self._node_bundle)
+        self._bundle_machine_subsets, status_code = self._sds_conn.get_bundle_machine_subsets(self._node_bundle)
         if self._bundle_machine_subsets is None:
             self.cwriteline('[Failed]', 'No bundle machine subsets found.')
             return False
@@ -403,6 +378,44 @@ class Installer (CWrite):
 
         return True
 
+    def write_config(self):
+        """
+        Setup the configuration and write it out.
+        """
+        # Create an empty configuration object, using the default path and filename.
+        sdcc = SDCConfig()
+
+        config = sdcc.create_blank_config()
+
+        # Check to see if we are using a home directory.
+        home = os.path.join(os.path.expanduser('~'), '.silentdune')
+        if self._config_root == home:
+
+            # Change the default path for pid and log file to home directory.
+            config.set('settings', 'pidfile', os.path.join(home, 'sdc.pid'))
+            config.set('settings', 'logfile', os.path.join(home, 'sdc.log'))
+
+        # Set the previous firewall service
+        pfws = 'unknown'
+
+        if self._ufw:
+            pfws = 'ufw'
+        elif self._firewalld:
+            pfws = 'firewalld'
+        elif self._iptables:
+            pfws = 'iptables'
+
+        config.set('settings', 'previous_firewall_service', pfws)
+
+        _logger.debug('Setting config bundle name to: {0}'.format(self._bundle.name))
+        # Set the node bundle name
+        config.set('settings', 'server', self.args.server)
+
+        config.set('settings', 'port', '' if self.args.port == -1 else str(self.args.port))
+        config.set('settings', 'use_tls', "no" if self.args.no_tls else "yes")
+
+        return sdcc.write_config(config)
+
     def clean_up(self):
         """
         Use this method to clean up after a failed install
@@ -432,7 +445,11 @@ class Installer (CWrite):
         if not self._config_root:
             return False
 
-        if not self._get_machine_id():
+        # Determine the unique machine id for this client
+        self._machine_id = get_machine_id()
+        if not self._machine_id:
+            self._machine_id = write_machine_id()
+        if not self._machine_id:
             return False
 
         if not self._check_args():
@@ -462,7 +479,10 @@ class Installer (CWrite):
         if not self._download_bundleset():
             return False
 
-        write_config_file(self, self._config_include)
+        if not self.write_config():
+            return False
+
+        # TODO: Make sure PID path and Log path are created and set to the proper user, group and mask.
 
         # TODO: Check firewalld service is running and disable.
 
@@ -494,8 +514,8 @@ def run():
     parser.add_argument('-u', _('--user'), help=_('Server admin user id'), default=None, type=str)  # noqa
     parser.add_argument('-p', _('--password'), help=_('Server admin password'), default=None, type=str)  # noqa
     parser.add_argument(
-            _('--nossl'), help=_('Do not use an SSL connection'), default=False, action='store_true')  # noqa
-    parser.add_argument(_('--port'), help=_('Use alternate port'), default=-1, type=int)  # noqa
+            _('--no-tls'), help=_('Do not use an secure connection'), default=False, action='store_true')  # noqa
+    parser.add_argument(_('--port'), help=_('Use alternate http port'), default=-1, type=int)  # noqa
     parser.add_argument(_('--debug'), help=_('Enable debug output'), default=False, action='store_true')  # noqa
     args = parser.parse_args()
 

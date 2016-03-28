@@ -28,17 +28,19 @@
 # Re-coded for python 3.x
 
 
-import sys
-import os
-import time
 import atexit
 import grp
-import pwd
 import logging
-from signal import SIGTERM
+import os
+import pwd
+import sys
+import time
+from signal import SIGTERM, SIGKILL
+
+_logger = logging.getLogger('sd-client')
 
 
-class Daemon:
+class Daemon(object):
     """
     A generic daemon class.
 
@@ -56,8 +58,6 @@ class Daemon:
         self.uid = uid
         self.gid = gid
 
-        self.__logger = logging.getLogger()
-
     def daemonize(self):
         """
         do the UNIX double-fork magic, see Stevens' "Advanced
@@ -65,21 +65,21 @@ class Daemon:
         http://www.erlenstar.demon.co.uk/unix/faq_2.html#SEC16
         """
 
-        # Lookup group and user id
-        if self.uid != 'nobody':
+        # Lookup group and user id if we are the root user
+        if self.uid != 'nobody' and os.getuid() == 0:
             try:
                 groupinfo = grp.getgrnam(self.gid)
-                self.__logger.debug('our group info. n: {0}, i:{1}'.format(groupinfo.gr_name, groupinfo.gr_gid))
+                _logger.debug('our group info. n: {0}, i:{1}'.format(groupinfo.gr_name, groupinfo.gr_gid))
 
             except KeyError:
-                self.__logger.critical('get daemon group id failed')
+                _logger.critical('get daemon group id failed')
                 sys.exit(1)
 
             try:
                 userinfo = pwd.getpwnam(self.uid)
-                self.__logger.debug('our user info n: {0}, i:{1}'.format(userinfo.pw_name, userinfo.pw_uid))
+                _logger.debug('our user info n: {0}, i:{1}'.format(userinfo.pw_name, userinfo.pw_uid))
             except KeyError:
-                self.__logger.critical('get daemon user id failed')
+                _logger.critical('get daemon user id failed')
                 sys.exit(1)
 
         try:
@@ -88,7 +88,7 @@ class Daemon:
                 # exit first parent
                 sys.exit(0)
         except os.error as err:
-            self.__logger.critical('fork #1 of double fork failed. ({0}): {1}'.format(err.errno, err.strerror))
+            _logger.critical('fork #1 of double fork failed. ({0}): {1}'.format(err.errno, err.strerror))
             sys.exit(1)
 
         # decouple from parent environment
@@ -103,7 +103,7 @@ class Daemon:
                 # exit from second parent
                 sys.exit(0)
         except os.error as err:
-            self.__logger.critical('fork #2 of double fork failed. ({0}): {1}'.format(err.errno, err.strerror))
+            _logger.critical('fork #2 of double fork failed. ({0}): {1}'.format(err.errno, err.strerror))
             sys.exit(1)
 
         # redirect standard file descriptors
@@ -117,13 +117,18 @@ class Daemon:
         os.dup2(se.fileno(), sys.stderr.fileno())
 
         # Setup proc base directory and mask
-        os.makedirs(self.procbase, int(self.dirmask, 8), exist_ok=True)
+        try:
+            os.makedirs(self.procbase, int(self.dirmask, 8))
+        except OSError:
+            pass
 
         # write pidfile
         atexit.register(self.delpid)
         pid = str(os.getpid())
-        open(self.pidfile, 'w+').write("%s\n" % pid)
-        os.chmod(self.pidfile, 0o444)
+        # open(self.pidfile, 'w+').write("%s\n" % pid)
+        with open(self.pidfile, 'w+') as handle:
+            handle.write("%s\n" % pid)
+        os.chmod(self.pidfile, 0o440)
 
         # If uid != nobody try to demote the process
         if self.uid != 'nobody':
@@ -136,12 +141,12 @@ class Daemon:
                 os.setgid(groupinfo.gr_gid)
                 os.setuid(userinfo.pw_uid)
             else:
-                self.__logger.warning('not running as root, unable to demote process')
+                _logger.warning('not running as root, unable to demote process')
 
     def delpid(self):
         os.remove(self.pidfile)
 
-    def start(self, parm):
+    def start(self):
         """
         Start the daemon
         """
@@ -158,12 +163,12 @@ class Daemon:
                 pid = None
 
         if pid:
-            self.__logger.warning('pidfile {0} already exists. daemon already running?'.format(self.pidfile))
-            sys.exit(1)
+            _logger.warning('PID file already exists. daemon already running?'.format(self.pidfile))
+            self.stop()
 
         # Start the daemon
         self.daemonize()
-        self.run(parm)
+        self.run()
 
     def stop(self):
         """
@@ -175,12 +180,12 @@ class Daemon:
             pid = int(pf.read().strip())
             pf.close()
         except os.error as err:
-            self.__logger.debug('unknown error when attempting to get pid from pid file. ({0}): {1}'
-                                .format(err.errno, err.strerror))
+            _logger.debug('unknown error when attempting to get pid from pid file. ({0}): {1}'
+                          .format(err.errno, err.strerror))
             pid = None
 
         if not pid:
-            self.__logger.warning('pidfile {0} does not exist. daemon not running?'.format(self.pidfile))
+            _logger.warning('pidfile {0} does not exist. daemon not running?'.format(self.pidfile))
             return  # not an error in a restart
 
         # Try killing the daemon process
@@ -193,8 +198,8 @@ class Daemon:
                 if os.path.exists(self.pidfile):
                     os.remove(self.pidfile)
             else:
-                self.__logger.error('unknown error when attempting to kill process. ({0}): {1}'
-                                    .format(err.errno, err.strerror))
+                _logger.error('unknown error when attempting to kill process. ({0}): {1}'
+                              .format(err.errno, err.strerror))
                 sys.exit(1)
 
         try:
@@ -202,14 +207,14 @@ class Daemon:
         except OSError:
             pass
 
-    def restart(self, parm):
+    def restart(self):
         """
         Restart the daemon
         """
         self.stop()
-        self.start(parm)
+        self.start()
 
-    def run(self, parm):
+    def run(self):
         """
         You should override this method when you subclass Daemon. It will be called after the process has been
         daemonized by start() or restart().

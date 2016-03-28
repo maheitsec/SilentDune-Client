@@ -22,23 +22,25 @@ import os
 import sys
 import logging
 import platform
-
-try:
-    from configparser import ConfigParser
-except ImportError:
-    from ConfigParser import ConfigParser  # ver. < 3.0
+import random
+import string
 
 _logger = logging.getLogger('sd-client')
 
 
 class CWrite(object):
+    """
+    Output messages to the console.
+    """
 
     debug = False
 
     # http://stackoverflow.com/questions/11245381/formatting-console-output
 
-    # Write a message to stdout or to debug logger with no linefeed.
     def cwrite(self, message, debug_msg=None):
+        """
+        Write a message to stdout or to debug logger with no linefeed.
+        """
 
         if self.debug:
             if debug_msg is None:
@@ -49,8 +51,10 @@ class CWrite(object):
             sys.stdout.write(message)
             sys.stdout.flush()
 
-    # Write a message to stdout or to debug logger with linefeed.
     def cwriteline(self, message, debug_msg=None):
+        """
+        Write a message to stdout or to debug logger with linefeed.
+        """
 
         if self.debug:
             if debug_msg is None:
@@ -62,8 +66,11 @@ class CWrite(object):
             sys.stdout.flush()
 
 
-# http://stackoverflow.com/questions/377017/test-if-executable-exists-in-python
 def which(program):
+    """
+    Find the path for a given program
+    http://stackoverflow.com/questions/377017/test-if-executable-exists-in-python
+    """
 
     def is_exe(fpath):
         return os.path.isfile(fpath) and os.access(fpath, os.X_OK)
@@ -83,6 +90,9 @@ def which(program):
 
 
 def setup_logging(debug=False):
+    """
+    Setup python logging
+    """
 
     # Set our logging options now that we have the program arguments.
     if debug:
@@ -125,7 +135,7 @@ def debug_dump(args):
 
 def determine_config_root():
     """
-    Determine where we are going to write the SD client configuration file.
+    Determine where we are going to write the SD node configuration file.
     """
 
     home = os.path.expanduser('~')
@@ -168,7 +178,7 @@ def determine_config_root():
 
     # Check if both locations failed.
     if root_failed and home_failed:
-        _logger.critical('Unable to determine a writable configuration path for the client.')
+        _logger.critical('Unable to determine a writable configuration path for this node.')
         return None
 
     if root_failed and not home_failed:
@@ -180,45 +190,41 @@ def determine_config_root():
     return config_root
 
 
-def read_config_file(file):
+def get_machine_id():
     """
-    Read the configuration file
-    """
-
-    config = ConfigParser()
-
-    # If empty parameter, figure out the location of the configuration file.
-    if not file:
-        file = os.path.join(determine_config_root(), 'sdc.conf')
-
-    if os.path.isfile(file):
-        config.read(file)
-        _logger.debug('Using config file: {0}'.format(file))
-        return config
-    else:
-        _logger.error('Config file ({0}) not found'.format(file))
-
-    return None
-
-
-def write_config_file(obj, include, file=None):
-    """
-    Write the configuration file from the object, only writing out the values from the include list.
+    Find the machine unique identifier or generate one for this machine.
     """
 
-    config = ConfigParser()
-    config.add_section('Client')
+    m_id = None
+    f = os.path.join(determine_config_root(), 'machine-id')
 
-    for attr, value in obj.__dict__.items():
-        if attr in include:
-            config.set('Client', attr, value if value else '')
+    _logger.debug('Looking up the machine-id value.')
 
-    # If empty parameter, figure out the location of the configuration file.
-    if not file:
-        file = os.path.join(determine_config_root(), 'sdc.conf')
+    # See if we have an exiting machine-id file in our config root
+    if os.path.exists(f):
+        with open(f, 'r') as handle:
+            m_id = handle.readline().strip('\n')
 
-    with open(file, 'wb') as h:
-        config.write(h)
+    if not m_id:
 
-    return config
+        # See if we can find a machine-id file on this machine
+        for p in ['/etc/machine-id', '/var/lib/dbus/machine-id']:
+            if os.path.isfile(p):
+                with open(p) as handle:
+                    m_id = handle.readline().strip('\n')
 
+    return m_id
+
+
+def write_machine_id():
+    """
+    Create a new unique machine id for this node.
+    """
+    _logger.debug('Creating unique machine-id value.')
+
+    m_id = ''.join(random.choice('abcdef' + string.digits) for _ in range(32))
+
+    with open(os.path.join(determine_config_root(), 'machine-id'), 'w') as h:
+        h.write(m_id + '\n')
+
+    return m_id
