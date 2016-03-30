@@ -22,7 +22,8 @@
 import logging
 import os
 from collections import OrderedDict
-from utilities import determine_config_root
+
+from silentdune_client.utils.misc import determine_config_root
 
 try:
     from configparser import ConfigParser
@@ -32,7 +33,7 @@ except ImportError:
 _logger = logging.getLogger('sd-client')
 
 
-class SDCConfig(object):
+class BaseConfig(object):
 
     _config_root = None
     _config_file = None
@@ -64,6 +65,7 @@ class SDCConfig(object):
 
         config = OrderedDict()
 
+        # Define the configuration section for this module
         config['settings'] = settings
 
         return config
@@ -114,12 +116,13 @@ class SDCConfig(object):
 
         return True
 
-    def create_blank_config(self):
+    def create_blank_config(self, config=None):
         """
         Create a new blank configuration.
         """
 
-        config = ConfigParser(dict_type=OrderedDict)
+        if not config:
+            config = ConfigParser(dict_type=OrderedDict)
 
         struct = self._prepare_config()
 

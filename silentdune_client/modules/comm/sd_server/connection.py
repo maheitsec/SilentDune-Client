@@ -18,18 +18,19 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
-import os
-import socket
-import requests
 import logging
+import os
+import requests
+import socket
 
-from utilities import CWrite
-from json_models import Node, NodeBundle, IPMachineSubset, Bundle, IPRulesFileWriter
+from silentdune_client.utils.console import ConsoleBase
+from silentdune_client.modules.comm.sd_server.json_models import Node, NodeBundle, \
+    IPMachineSubset, Bundle, IPRulesFileWriter
 
 _logger = logging.getLogger('sd-client')
 
 
-class SDSConnection (CWrite):
+class SDSConnection (ConsoleBase):
 
     # Security
     _oauth_crypt_token = None
@@ -242,8 +243,7 @@ class SDSConnection (CWrite):
 
     def get_default_bundle(self):
         """
-        Request Bundle object from server filtered by name value.
-        :param name:
+        Request default Bundle object from server.
         :return Bundle:
         """
 

@@ -30,11 +30,16 @@ from subprocess import check_output, CalledProcessError
 
 import requests
 
-from configuration import SDCConfig
-from json_models import Node, NodeBundle
-from server import SDSConnection
-from utilities import CWrite, which, get_machine_id, debug_dump, \
-    setup_logging, determine_config_root, write_machine_id
+# TODO: Change up sd_server module to a loadable module for the installer.
+from silentdune_client.modules.comm.sd_server.json_models import Node, NodeBundle
+from silentdune_client.modules.comm.sd_server.connection import SDSConnection
+
+from silentdune_client.utils.configuration import BaseConfig
+from silentdune_client.utils.console import ConsoleBase
+from silentdune_client.utils.log import setup_logging
+from silentdune_client.utils.misc import which, determine_config_root
+from silentdune_client.utils.node_info import get_machine_id, write_machine_id, node_info_dump
+from silentdune_client.utils.module_loading import import_by_str
 
 try:
     from configparser import ConfigParser
@@ -44,7 +49,7 @@ except ImportError:
 _logger = logging.getLogger('sd-client')
 
 
-class Installer(CWrite):
+class Installer(ConsoleBase):
     # parser args
     args = None
     bad_arg = False
@@ -387,7 +392,7 @@ class Installer(CWrite):
         Setup the configuration and write it out.
         """
         # Create an empty configuration object, using the default path and filename.
-        sdcc = SDCConfig()
+        sdcc = BaseConfig()
 
         config = sdcc.create_blank_config()
 
@@ -526,7 +531,7 @@ def run():
 
     # Dump debug information
     if args.debug:
-        debug_dump(args)
+        node_info_dump(args)
 
     i = Installer(args)
 

@@ -2,7 +2,7 @@
 # Authors: Robert Abram <robert.abram@entpack.com>
 #
 # Copyright (C) 2015 EntPack
-# see file 'LICENSE' for use and warranty information
+# see file 'COPYING' for use and warranty information
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -17,3 +17,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
+
+
+class ImproperlyConfigured(Exception):
+    """ Silent Dune Client is improperly configured somehow """
+    pass
