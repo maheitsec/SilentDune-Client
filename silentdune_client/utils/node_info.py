@@ -25,7 +25,7 @@ import random
 import string
 import sys
 
-from silentdune_client.utils.misc import determine_config_root
+from utils.misc import determine_config_root
 
 _logger = logging.getLogger('sd-client')
 

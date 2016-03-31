@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import pytest
-from silentdune_client.skeleton import fib
+from skeleton import fib
 
 __author__ = "rabram"
 __copyright__ = "rabram"

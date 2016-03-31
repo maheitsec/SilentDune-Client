@@ -21,7 +21,7 @@
 import logging
 import sys
 from importlib import import_module
-from silentdune_client.utils import six
+from utils import six
 
 _logger = logging.getLogger('sd-client')
 
@@ -47,3 +47,31 @@ def import_by_str(mod):
         msg = 'Module "{0}" does not define a "{1}" attribute/class'.format(mpath, cname)
         _logger.error(msg)
         six.reraise(ImportError, ImportError(msg), sys.exc_info()[2])
+
+
+class BaseModule (object):
+    """
+    This is the Virtual module object every module should inherit from.
+    Each property and method are virtual and can be overridden as needed.
+    """
+
+    # The name of the module and version.
+    _name = 'UnknownModule'
+    _version = '0.0.1'
+    _config = None
+    _subparser = None
+
+    #
+    # Virtual Installer Hook Methods
+    #
+    def get_name(self):
+        return self._name
+
+    def get_version(self):
+        return self._version
+
+    def get_installer_subparser(self):
+        return self._subparser
+
+    def get_configuration(self):
+        return self._config

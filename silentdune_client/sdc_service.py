@@ -27,11 +27,11 @@ import signal
 import sys
 import time
 
-from silentdune_client.utils.log import setup_logging
-from silentdune_client.utils.node_info import node_info_dump
+from utils.log import setup_logging
+from utils.node_info import node_info_dump
 
-from silentdune_client.utils.configuration import BaseConfig
-from silentdune_client.utils.daemon import Daemon
+from utils.configuration import BaseConfig
+from utils.daemon import Daemon
 
 _logger = logging.getLogger('sd-client')
 

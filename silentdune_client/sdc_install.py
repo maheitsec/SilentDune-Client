@@ -31,15 +31,17 @@ from subprocess import check_output, CalledProcessError
 import requests
 
 # TODO: Change up sd_server module to a loadable module for the installer.
-from silentdune_client.modules.comm.sd_server.json_models import Node, NodeBundle
-from silentdune_client.modules.comm.sd_server.connection import SDSConnection
+from modules.comm.sd_server.json_models import Node, NodeBundle
+from modules.comm.sd_server.connection import SDSConnection
 
-from silentdune_client.utils.configuration import BaseConfig
-from silentdune_client.utils.console import ConsoleBase
-from silentdune_client.utils.log import setup_logging
-from silentdune_client.utils.misc import which, determine_config_root
-from silentdune_client.utils.node_info import get_machine_id, write_machine_id, node_info_dump
-from silentdune_client.utils.module_loading import import_by_str
+from utils.configuration import BaseConfig
+from utils.console import ConsoleBase
+from utils.log import setup_logging
+from utils.misc import which, determine_config_root
+from utils.node_info import get_machine_id, write_machine_id, node_info_dump
+from modules import __load_modules__
+from utils.module_loading import import_by_str
+
 
 try:
     from configparser import ConfigParser
@@ -513,6 +515,9 @@ def run():
         kwargs['unicode'] = True
     gettext.install('sdc_install', **kwargs)
 
+    # Get loadable module list
+    module_list, config_list = __load_modules__()
+
     # Setup program arguments.
     parser = argparse.ArgumentParser(prog='sdc-install')
     parser.add_argument(_('server'), help=_('Silent Dune server'), default=None, type=str)  # noqa
@@ -533,14 +538,18 @@ def run():
     if args.debug:
         node_info_dump(args)
 
-    i = Installer(args)
 
-    if not i.start_install():
-        i.clean_up()
-        _logger.error('Install aborted.')
-        return 1
 
     return 0
+
+    # i = Installer(args)
+    #
+    # if not i.start_install():
+    #     i.clean_up()
+    #     _logger.error('Install aborted.')
+    #     return 1
+    #
+    # return 0
 
 
 # --- Main Program Call ---

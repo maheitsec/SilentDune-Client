@@ -21,8 +21,16 @@
 from collections import OrderedDict
 import pkg_resources
 
-from silentdune_client.utils.configuration import BaseConfig
-from silentdune_client.modules import BaseModule
+from utils.configuration import BaseConfig
+from utils.module_loading import BaseModule
+
+# Define the available Module classes.
+module_list = {
+    'Silent Dune Server': {
+        'module': 'SilentDuneServerModule',
+        'config': 'SilentDuneServerConfig'
+    },
+}
 
 
 class SilentDuneServerModule(BaseModule):

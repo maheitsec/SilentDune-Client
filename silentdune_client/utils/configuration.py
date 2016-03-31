@@ -23,7 +23,7 @@ import logging
 import os
 from collections import OrderedDict
 
-from silentdune_client.utils.misc import determine_config_root
+from utils.misc import determine_config_root
 
 try:
     from configparser import ConfigParser

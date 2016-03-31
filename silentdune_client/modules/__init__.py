@@ -18,36 +18,62 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
+import logging
 import os
+
+from utils.module_loading import import_by_str
+
+_logger = logging.getLogger('sd-client')
 
 
 def __load_modules__(dir='modules'):
-    list = os.listdir(dir)
 
-    # TODO: Call __load_modules__ in each subdirectory.  The goal is to return a list of Module class names.
+    module_list = list()
+    config_list = list()
+
+    # Loop through the directories looking for modules to import.
+    for root, dirs, files in os.walk(dir, topdown=True):
+        # Skip our directory.
+        if root == '.':
+            continue
+
+        # Look only at __init__.py files.
+        for name in files:
+            if name == '__init__.py':
+
+                # Convert path to dotted path.
+                mp = root.replace('./', '').replace('/', '.') + '.module_list'
+
+                # Attempt to import 'module_list' from __init__.py file.
+                try:
+                    ml = import_by_str(mp)
+                except ImportError:
+                    continue
+
+                for mname, mdict in ml.items():
+                    _logger.info('Found module definition "{0}" in path {1}'.format(mname, mp))
+                    for key, name in mdict.items():
+
+                        if key == 'module':
+                            tpath = mp + '.' + name
+                            _logger.info('Adding "{0}" module ({1}).'.format(mname, tpath))
+                            module_list.append(tpath)
+
+                        if key == 'config':
+                            tpath = mp + '.' + name
+                            _logger.info('Adding "{0}" module config ({1}).'.format(mname, tpath))
+                            config_list.append(tpath)
+
+    return module_list, config_list
 
 
-class BaseModule (object):
 
-    # The name of the module and version.
-    _name = 'UnknownModule'
-    _version = '0.0.1'
-    _config = None
-    _subparser = None
 
-    #
-    # Virtual Installer Hook Methods
-    #
-    def get_name(self):
-        return self._name
 
-    def get_version(self):
-        return self._version
 
-    def get_installer_subparser(self):
-        return self._subparser
 
-    def get_configuration(self):
-        return self._config
+
+
+
 
 
