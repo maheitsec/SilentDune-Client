@@ -112,6 +112,9 @@ def run():
             _logger.warning("Daemon: Got SIGTERM, quitting.")
         _daemon.stopProcessing = True
 
+    # Setup application logging
+    _logger.addHandler(setup_logging('--debug' in sys.argv))
+
     # Setup i18n - Good for 2.x and 3.x python.
     kwargs = {}
     if sys.version_info[0] < 3:
@@ -125,9 +128,6 @@ def run():
     parser.add_argument('action', choices=('start', 'stop', 'restart'))
 
     args = parser.parse_args()
-
-    # Setup logging now that we know the debug parameter
-    _logger.addHandler(setup_logging(args.debug))
 
     # Dump debug information
     if args.debug:

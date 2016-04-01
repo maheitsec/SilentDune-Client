@@ -509,6 +509,9 @@ def run():
     # if '/install' in base_path:
     #     base_path, tail = os.path.split(base_path)
 
+    # Setup application logging
+    _logger.addHandler(setup_logging('--debug' in sys.argv))
+
     # Setup i18n - Good for 2.x and 3.x python.
     kwargs = {}
     if sys.version_info[0] < 3:
@@ -516,29 +519,32 @@ def run():
     gettext.install('sdc_install', **kwargs)
 
     # Get loadable module list
-    module_list, config_list = __load_modules__()
+    module_list = __load_modules__()
 
     # Setup program arguments.
-    parser = argparse.ArgumentParser(prog='sdc-install')
-    parser.add_argument(_('server'), help=_('Silent Dune server'), default=None, type=str)  # noqa
-    parser.add_argument(
-        '-b', _('--bundle'), help=_('Firewall bundle to use for this node'), default=None, type=str)  # noqa
-    parser.add_argument('-u', _('--user'), help=_('Server admin user id'), default=None, type=str)  # noqa
-    parser.add_argument('-p', _('--password'), help=_('Server admin password'), default=None, type=str)  # noqa
-    parser.add_argument(
-        _('--no-tls'), help=_('Do not use an secure connection'), default=False, action='store_true')  # noqa
-    parser.add_argument(_('--port'), help=_('Use alternate http port'), default=-1, type=int)  # noqa
+    parser = argparse.ArgumentParser(prog='sdc-install')  # , formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument(_('--debug'), help=_('Enable debug output'), default=False, action='store_true')  # noqa
+    # parser.add_argument(_('server'), help=_('Silent Dune server'), default=None, type=str)  # noqa
+    # parser.add_argument(
+    #     '-b', _('--bundle'), help=_('Firewall bundle to use for this node'), default=None, type=str)  # noqa
+    # parser.add_argument('-u', _('--user'), help=_('Server admin user id'), default=None, type=str)  # noqa
+    # parser.add_argument('-p', _('--password'), help=_('Server admin password'), default=None, type=str)  # noqa
+    # parser.add_argument(
+    #     _('--no-tls'), help=_('Do not use an secure connection'), default=False, action='store_true')  # noqa
+    # parser.add_argument(_('--port'), help=_('Use alternate http port'), default=-1, type=int)  # noqa
+
+    # Loop through the module objects and add any argparse arguments.
+    for mod in module_list:
+        mod.add_installer_arguments(parser)
+
     args = parser.parse_args()
 
-    # Setup logging now that we know the debug parameter
-    _logger.addHandler(setup_logging(args.debug))
+    for mod in module_list:
+        mod.validate_arguments(args)
 
     # Dump debug information
     if args.debug:
         node_info_dump(args)
-
-
 
     return 0
 

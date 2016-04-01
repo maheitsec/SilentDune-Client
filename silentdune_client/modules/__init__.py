@@ -29,7 +29,6 @@ _logger = logging.getLogger('sd-client')
 def __load_modules__(dir='modules'):
 
     module_list = list()
-    config_list = list()
 
     # Loop through the directories looking for modules to import.
     for root, dirs, files in os.walk(dir, topdown=True):
@@ -42,29 +41,29 @@ def __load_modules__(dir='modules'):
             if name == '__init__.py':
 
                 # Convert path to dotted path.
-                mp = root.replace('./', '').replace('/', '.') + '.module_list'
+                mp = root.replace('./', '').replace('/', '.')
 
                 # Attempt to import 'module_list' from __init__.py file.
                 try:
-                    ml = import_by_str(mp)
+                    ml = import_by_str(mp + '.module_list')
                 except ImportError:
                     continue
 
                 for mname, mdict in ml.items():
-                    _logger.info('Found module definition "{0}" in path {1}'.format(mname, mp))
+                    _logger.debug('Found module definition "{0}" in path {1}'.format(mname, mp))
                     for key, name in mdict.items():
 
                         if key == 'module':
                             tpath = mp + '.' + name
-                            _logger.info('Adding "{0}" module ({1}).'.format(mname, tpath))
-                            module_list.append(tpath)
+                            try:
+                                mod = import_by_str(tpath)
+                                module_list.append(mod())
+                                _logger.debug('Adding "{0}" module ({1}).'.format(mname, tpath))
+                            except ImportError:
+                                _logger.error('Adding "{0}" module failed. ({1}).'.format(mname, tpath))
+                                pass
 
-                        if key == 'config':
-                            tpath = mp + '.' + name
-                            _logger.info('Adding "{0}" module config ({1}).'.format(mname, tpath))
-                            config_list.append(tpath)
-
-    return module_list, config_list
+    return module_list
 
 
 

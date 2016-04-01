@@ -18,12 +18,9 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
-import logging
 import sys
 from importlib import import_module
 from utils import six
-
-_logger = logging.getLogger('sd-client')
 
 
 def import_by_str(mod):
@@ -36,7 +33,6 @@ def import_by_str(mod):
         mpath, cname = mod.rsplit('.', 1)
     except ValueError:
         msg = '{0} dosen\'t look like a module path.'.format(mod)
-        _logger.error(msg)
         six.reraise(ImportError, ImportError(msg), sys.exc_info()[2])
 
     module = import_module(mpath)
@@ -45,7 +41,6 @@ def import_by_str(mod):
         return getattr(module, cname)
     except AttributeError:
         msg = 'Module "{0}" does not define a "{1}" attribute/class'.format(mpath, cname)
-        _logger.error(msg)
         six.reraise(ImportError, ImportError(msg), sys.exc_info()[2])
 
 
@@ -57,9 +52,10 @@ class BaseModule (object):
 
     # The name of the module and version.
     _name = 'UnknownModule'
+    _arg_name = 'unknown'              # This is the argparser name for this module
     _version = '0.0.1'
     _config = None
-    _subparser = None
+    _enabled = True
 
     #
     # Virtual Installer Hook Methods
@@ -70,8 +66,14 @@ class BaseModule (object):
     def get_version(self):
         return self._version
 
-    def get_installer_subparser(self):
-        return self._subparser
+    def add_installer_arguments(self, parser):
+        return None
 
-    def get_configuration(self):
+    def get_config(self):
         return self._config
+
+    def disable_module(self):
+        self._enabled = False
+
+    def module_enabled(self):
+        return self._enabled
