@@ -19,6 +19,7 @@
 #
 
 import argparse
+from collections import OrderedDict
 import gettext
 import logging
 import os
@@ -34,7 +35,7 @@ import requests
 from modules.comm.sd_server.json_models import Node, NodeBundle
 from modules.comm.sd_server.connection import SDSConnection
 
-from utils.configuration import BaseConfig
+from utils.configuration import ClientConfiguration
 from utils.console import ConsoleBase
 from utils.log import setup_logging
 from utils.misc import which, determine_config_root
@@ -52,6 +53,10 @@ _logger = logging.getLogger('sd-client')
 
 
 class Installer(ConsoleBase):
+
+    # Modules dictionary list
+    _modules = None
+
     # parser args
     args = None
     bad_arg = False
@@ -97,34 +102,14 @@ class Installer(ConsoleBase):
     _node_bundle = None
     _bundle_machine_subsets = None
 
-    def __init__(self, args):
+    def __init__(self, args, modules):
+
+        self._modules = modules
 
         self._config_p = ConfigParser(allow_no_value=True)
         self.args = args
         self.debug = args.debug  # Save debug value for cwrite methods.
-        self._sds_conn = SDSConnection(args.debug, args.server, args.no_tls, args.port)
-
-    def _check_args(self):
-        """
-        Validate the command line arguments.
-        """
-
-        self.bad_arg = False
-
-        # Check parameters exist and are sane.
-        if self.args.server is None:
-            _logger.error('Silent Dune server name or ip address parameter required.')
-            self.bad_arg = True
-
-        if len(self.args.server) > 500:
-            _logger.error('Server parameter is too long.')
-            self.bad_arg = True
-
-        if self.args.bundle is not None and len(self.args.bundle) > 50:
-            _logger.error('Bundle parameter is too long.')
-            self.bad_arg = True
-
-        return not self.bad_arg
+        # self._sds_conn = SDSConnection(args.debug, args.server, args.no_tls, args.port)
 
     def _check_for_external_progs(self):
 
@@ -393,17 +378,16 @@ class Installer(ConsoleBase):
         """
         Setup the configuration and write it out.
         """
-        # Create an empty configuration object, using the default path and filename.
-        sdcc = BaseConfig()
 
-        config = sdcc.create_blank_config()
+        # Create an empty configuration object, using the default path and filename.
+        cc = ClientConfiguration()
 
         # Check to see if we are using a home directory.
         home = os.path.join(os.path.expanduser('~'), '.silentdune')
         if self._config_root == home:
             # Change the default path for pid and log file to home directory.
-            config.set('settings', 'pidfile', os.path.join(home, 'sdc.pid'))
-            config.set('settings', 'logfile', os.path.join(home, 'sdc.log'))
+            cc.set('settings', 'pidfile', os.path.join(home, 'sdc.pid'))
+            cc.set('settings', 'logfile', os.path.join(home, 'sdc.log'))
 
         # Set the previous firewall service
         pfws = 'unknown'
@@ -415,16 +399,13 @@ class Installer(ConsoleBase):
         elif self._iptables:
             pfws = 'iptables'
 
-        config.set('settings', 'previous_firewall_service', pfws)
+        cc.set('settings', 'previous_firewall_service', pfws)
 
-        _logger.debug('Setting config bundle name to: {0}'.format(self._bundle.name))
-        # Set the node bundle name
-        config.set('settings', 'server', self.args.server)
+        # Loop through the modules and have them set their configuration information
+        for mod in self._modules:
+            cc = mod.prepare_config(cc)
 
-        config.set('settings', 'port', '' if self.args.port == -1 else str(self.args.port))
-        config.set('settings', 'use_tls', "no" if self.args.no_tls else "yes")
-
-        return sdcc.write_config(config)
+        return cc.write_config()
 
     def clean_up(self):
         """
@@ -462,32 +443,29 @@ class Installer(ConsoleBase):
         if not self._machine_id:
             return False
 
-        if not self._check_args():
-            return False
-
         if not self._init_system_check():
             return False
 
         if not self._firewall_check():
             return False
 
-        if not self._sds_conn.connect_with_password(self.args.user, self.args.password):
-            return False
-
-        if not self._register_node():
-            return False
-
-        if not self._get_rule_bundle():
-            return False
-
-        if not self._set_node_bundle():
-            return False
-
-        # TODO: Get and Upload adapter interface list to server
-        # Note: It might be better to call ifconfig instead of using netifaces to get adapter info.
-
-        if not self._download_bundleset():
-            return False
+        # if not self._sds_conn.connect_with_password(self.args.user, self.args.password):
+        #     return False
+        #
+        # if not self._register_node():
+        #     return False
+        #
+        # if not self._get_rule_bundle():
+        #     return False
+        #
+        # if not self._set_node_bundle():
+        #     return False
+        #
+        # # TODO: Get and Upload adapter interface list to server
+        # # Note: It might be better to call ifconfig instead of using netifaces to get adapter info.
+        #
+        # if not self._download_bundleset():
+        #     return False
 
         if not self.write_config():
             return False
@@ -539,23 +517,25 @@ def run():
 
     args = parser.parse_args()
 
+    # Have each module validate arguments.
     for mod in module_list:
-        mod.validate_arguments(args)
+        success = mod.validate_arguments(args)
+        if not success:
+            parser.print_help()
+            exit(1)
 
     # Dump debug information
     if args.debug:
         node_info_dump(args)
 
-    return 0
+    i = Installer(args, module_list)
 
-    # i = Installer(args)
-    #
-    # if not i.start_install():
-    #     i.clean_up()
-    #     _logger.error('Install aborted.')
-    #     return 1
-    #
-    # return 0
+    if not i.start_install():
+        i.clean_up()
+        _logger.error('Install aborted.')
+        return 1
+
+    return 0
 
 
 # --- Main Program Call ---

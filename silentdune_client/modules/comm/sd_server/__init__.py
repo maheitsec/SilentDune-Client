@@ -18,13 +18,15 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
+import logging
 import sys
-from collections import OrderedDict
 
 import pkg_resources
 
-from utils.configuration import BaseConfig
-from utils.module_loading import BaseModule
+from modules import BaseModule
+from utils.misc import is_valid_ipv4_address, is_valid_ipv6_address
+
+_logger = logging.getLogger('sd-client')
 
 # Define the available Module classes.
 module_list = {
@@ -37,14 +39,20 @@ module_list = {
 class SilentDuneServerModule(BaseModule):
     """ Silent Dune Server Module """
 
+    # Module properties
+    server = ''
+    port = 0
+    no_tls = False
+    bundle = ''
+    user = ''
+    password = ''
+
     def __init__(self):
 
         # Set our module name
         self._name = 'SilentDuneServerModule'
         self._arg_name = 'server'
-
-        # Set our BaseConfig derived object here.
-        self._config = SilentDuneServerConfig()
+        self._config_section = 'server_module'
 
         try:
             self._version = pkg_resources.get_distribution(__name__).version
@@ -56,83 +64,125 @@ class SilentDuneServerModule(BaseModule):
         # Create a argument group for our module
         group = parser.add_argument_group('server module', 'Silent Dune Server module')
 
-        # Create a parent exclusive group
-        pg = group.add_mutually_exclusive_group()
+        group.add_argument('--server-mod-disable', action='store_true', help=_('Disable the server module'))  # noqa
 
-        # Create two groups, one to disable the module and the other for module options
-        dg = pg.add_mutually_exclusive_group()
-        dg.add_argument('--server-disable-mod', action='store_true', help=_('Disable the server module'))  # noqa
-
-        og = pg.add_mutually_exclusive_group(required=True)
-        og.add_argument(_('--server-ip'), help=_('Silent Dune server IP address (required)'),
+        group.add_argument(_('--server'), help=_('Silent Dune server network address (required)'),
                         default=None, type=str, metavar='IP')  # noqa
-        og.add_argument(_('--server-bundle'), help=_('Firewall bundle to use for this node (required)'),
+        group.add_argument(_('--server-bundle'), help=_('Firewall bundle to use for this node (required)'),
                         default=None, type=str, metavar='BUNDLE')  # noqa
-        og.add_argument(_('--server-user'), help=_('Server admin user name (required)'),
+        group.add_argument(_('--server-user'), help=_('Server admin user name (required)'),
                         default=None, type=str, metavar='USER')  # noqa
-        og.add_argument(_('--server-password'), help=_('Server admin password (required)'),
+        group.add_argument(_('--server-password'), help=_('Server admin password (required)'),
                         default=None, type=str, metavar='PASSWORD')  # noqa
-        og.add_argument(_('--server-no-tls'), help=_('Do not use a TLS connection'),
+        group.add_argument(_('--server-no-tls'), help=_('Do not use a TLS connection'),
                         default=False, action='store_true')  # noqa
-        og.add_argument(_('--server-port'), help=_('Use alternate http port'),
-                        default=-1, type=int, metavar='PORT')  # noqa
+        group.add_argument(_('--server-port'), help=_('Use alternate http port'),
+                        default=0, type=int, metavar='PORT')  # noqa
 
     def validate_arguments(self, args):
+        """
+        Validate command line arguments and save values to our configuration object.
+        :param args: An argparse object.
+        """
 
-        if args.server_disable_mod:
+        # Check for conflicting arguments.
+        if '--server-mod-disable' in sys.argv and (
+                                        '--server' in sys.argv or
+                                        '--server-bundle' in sys.argv or
+                                        '--server-user' in sys.argv or
+                                        '--server-password' in sys.argv or
+                                        '--server-no-tls' in sys.argv or
+                                        '--server-port' in sys.argv):
+            print('sdc-install: argument --server-mod-disable conficts with other server module arguments.')
+            return False
+
+        if args.server_mod_disable:
             self._enabled = False
         else:
-            if not args.server_ip:
-                print('sdc-install: argument --server-ip is required.')
-                sys.exit(1)
+            if not args.server:
+                print('sdc-install: argument --server is required.')
+                return False
             if not args.server_bundle:
                 print('sdc-install: argument --server-bundle is required.')
-                sys.exit(1)
+                return False
             if not args.server_user:
                 print('sdc-install: argument --server-user is required.')
-                sys.exit(1)
+                return False
             if not args.server_password:
                 print('sdc-install: argument --server-password is required.')
-                sys.exit(1)
+                return False
+
+        # Check for valid IPv4 address
+        if '.' in args.server:
+            if not is_valid_ipv4_address(args.server):
+                print('sdc-install: argument --server is invalid ip address')
+                return False
+
+        # Check for valid IPv6 address
+        if ':' in args.server:
+            if not is_valid_ipv6_address(args.server):
+                print('sdc-install: argument --server is invalid ip address')
+                return False
+
+        self.server = args.server
+        self.port = args.server_port
+        self.no_tls = args.server_no_tls
+        self.bundle = args.server_bundle
+
+        # User and password are only used during the install process
+        self.user = args.server_user
+        self.password = args.server_password
 
         return True
 
+    def validate_config(self, config):
+        """
+        Validate configuration file arguments and save values to our config object.
+        :param config: A ConfigParser object.
+        """
 
-class SilentDuneServerConfig(BaseConfig):
-    """ Silent Dune Server Module Configuration """
+        server = config.get(self._config_section, 'server')
 
-    def _prepare_config(self):
+        # Check for valid IPv4 address
+        if '.' in server:
+            if not is_valid_ipv4_address(server):
+                _logger.error('Config value for "server" is invalid ip address')
+                return False
+
+        # Check for valid IPv6 address
+        if ':' in server:
+            if not is_valid_ipv6_address(server):
+                _logger.error('Config value for "server" is invalid ip address')
+                return False
+
+        self.server = config.get(self._config_section, 'server')
+        self.port = config.get(self._config_section, 'port')
+        self.no_tls = True if config.get(self._config_section, 'no_tls').lower() == 'yes' else False
+        self.bundle = config.get(self._config_section, 'bundle')
+
+        return True
+
+    def prepare_config(self, config):
         """
         Return the configuration file structure. Any new configuration items should be added here.
         Note: The order should be reverse of the expected order in the configuration file.
         """
 
-        settings = OrderedDict()
+        config.set(self._config_section, 'server', self.server)
+        config.set(self._config_section, 'port', self.port)
+        config.set(self._config_section, 'use_tls', 'no' if self.no_tls else 'yes')
+        config.set(self._config_section, 'bundle', self.bundle)
 
-        settings['server'] = ''
-        settings['port'] = ''
-        settings['use_tls'] = 'yes'
-
-        config = OrderedDict()
-
-        # Define the configuration section for this module
-        config['server_module'] = settings
+        config.set_comment(self._config_section, 'server_module',
+                           _('; Silent Dune Server Module Configuration\n'))  # noqa
+        config.set_comment(self._config_section, 'server',
+                           _('; The Silent Dune management server to connect with.\n'))  # noqa
+        config.set_comment(self._config_section, 'port',
+                           _('; The port used by the management server. If no port is given this\n'  # noqa
+                            '; node will use port 80 or 443 to connect to the management server\n'
+                            '; depending on if the --no-tls option was used during the install.\n'))
+        config.set_comment(self._config_section, 'use_tls',
+                           _('; Use a secure connection when communicating with the management server.'))  # noqa
 
         return config
-
-    def _get_comments_by_key(self, key):
-        """
-        Return the configuration comments for the given key.
-        Note: Each comment line must start with '; ' and end with '\n'.
-        """
-
-        return {
-            'server_module': (_('; Silent Dune Server Module Configuration\n')),  # noqa
-            'server': (_('; The Silent Dune management server to connect with.\n')),  # noqa
-            'port': (_('; The port used by the management server. If no port is given this\n'  # noqa
-                       '; node will use port 80 or 443 to connect to the management server\n'
-                       '; depending on if the --no-tls option was used during the install.\n')),
-            'use_tls': (_('; Use a secure connection when communicating with the management server.')),  # noqa
-        }.get(key, '\n')
-
 

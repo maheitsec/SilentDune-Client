@@ -30,7 +30,7 @@ import time
 from utils.log import setup_logging
 from utils.node_info import node_info_dump
 
-from utils.configuration import BaseConfig
+from utils.configuration import ClientConfiguration
 from utils.daemon import Daemon
 
 _logger = logging.getLogger('sd-client')
@@ -134,7 +134,7 @@ def run():
         node_info_dump(args)
 
     # Read the local configuration file.
-    config = BaseConfig(args.config).read_config()
+    config = ClientConfiguration(args.config).read_config()
 
     if not config:
         _logger.error('Invalid configuration file information, aborting.')

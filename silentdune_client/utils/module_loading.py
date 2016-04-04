@@ -42,38 +42,3 @@ def import_by_str(mod):
     except AttributeError:
         msg = 'Module "{0}" does not define a "{1}" attribute/class'.format(mpath, cname)
         six.reraise(ImportError, ImportError(msg), sys.exc_info()[2])
-
-
-class BaseModule (object):
-    """
-    This is the Virtual module object every module should inherit from.
-    Each property and method are virtual and can be overridden as needed.
-    """
-
-    # The name of the module and version.
-    _name = 'UnknownModule'
-    _arg_name = 'unknown'              # This is the argparser name for this module
-    _version = '0.0.1'
-    _config = None
-    _enabled = True
-
-    #
-    # Virtual Installer Hook Methods
-    #
-    def get_name(self):
-        return self._name
-
-    def get_version(self):
-        return self._version
-
-    def add_installer_arguments(self, parser):
-        return None
-
-    def get_config(self):
-        return self._config
-
-    def disable_module(self):
-        self._enabled = False
-
-    def module_enabled(self):
-        return self._enabled

@@ -26,7 +26,72 @@ from utils.module_loading import import_by_str
 _logger = logging.getLogger('sd-client')
 
 
+class BaseModule(object):
+    """
+    This is the Virtual module object every module should inherit from.
+    Each property and method are virtual and can be overridden as needed.
+    """
+
+    # The name of the module and version.
+    _name = 'UnknownModule'
+    _arg_name = 'unknown'  # This is the argparser name for this module
+    _config_section = 'unknown'  # This is the configuration file section name
+    _version = '0.0.1'
+    _config = None
+    _enabled = True
+
+    #
+    # Virtual Installer Hook Methods
+    #
+    def get_name(self):
+        return self._name
+
+    def get_version(self):
+        return self._version
+
+    def add_installer_arguments(self, parser):
+        pass
+
+    def get_config(self):
+        return self._config
+
+    def disable_module(self):
+        self._enabled = False
+
+    def module_enabled(self):
+        return self._enabled
+
+    def validate_arguments(self, args):
+        """
+        Validate command line arguments and save values to our configuration object.
+        :param args: An argparse object.
+        :return: True if command line arguments are valid, otherwise False.
+        """
+        return True
+
+    def validate_config(self, config):
+        """
+        Validate configuration file arguments and save values to our config object.
+        :param config: A ConfigParser object.
+        :return: True if configuration file values are valid, otherwise False.
+        """
+        return True
+
+    def prepare_config(self, config):
+        """
+        Add the module configuration items that need to be saved to the configuration file.
+        :param config: A ClientConfiguration object.
+        :return: Return the modified ClientConfiguration object.
+        """
+        return config
+
+
 def __load_modules__(dir='modules'):
+    """
+    Search for modules to load.  Modules must reside under the modules directory and
+    have a "module_list" dict defined in the __init__.py file. Each entry in the
+    "module_list" must list a Class that subclasses BaseModule.
+    """
 
     module_list = list()
 
