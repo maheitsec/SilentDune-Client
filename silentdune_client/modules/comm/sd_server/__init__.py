@@ -19,7 +19,15 @@
 #
 
 import logging
+import os
+import platform
+import requests
+import socket
 import sys
+from subprocess import check_output, CalledProcessError
+
+from modules.comm.sd_server.json_models import Node, NodeBundle
+from modules.comm.sd_server.connection import SDSConnection
 
 import pkg_resources
 
@@ -40,12 +48,21 @@ class SilentDuneServerModule(BaseModule):
     """ Silent Dune Server Module """
 
     # Module properties
-    server = ''
-    port = 0
-    no_tls = False
-    bundle = ''
-    user = ''
-    password = ''
+    _server = ''
+    _port = 0
+    _no_tls = False
+    _bundle_name = ''
+    _user = ''
+    _password = ''
+
+    # Server Connection
+    _sds_conn = None
+
+    # Server objects
+    _node = None
+    _bundle = None
+    _node_bundle = None
+    _bundle_machine_subsets = None
 
     def __init__(self):
 
@@ -60,6 +77,10 @@ class SilentDuneServerModule(BaseModule):
             self._version = 'unknown'
 
     def add_installer_arguments(self, parser):
+        """
+        Virtual Override
+        Add our module's argparser arguments
+        """
 
         # Create a argument group for our module
         group = parser.add_argument_group('server module', 'Silent Dune Server module')
@@ -81,6 +102,7 @@ class SilentDuneServerModule(BaseModule):
 
     def validate_arguments(self, args):
         """
+        Virtual Override
         Validate command line arguments and save values to our configuration object.
         :param args: An argparse object.
         """
@@ -124,19 +146,20 @@ class SilentDuneServerModule(BaseModule):
                 print('sdc-install: argument --server is invalid ip address')
                 return False
 
-        self.server = args.server
-        self.port = args.server_port
-        self.no_tls = args.server_no_tls
-        self.bundle = args.server_bundle
+        self._server = args.server
+        self._port = args.server_port
+        self._no_tls = args.server_no_tls
+        self._bundle_name = args.server_bundle
 
         # User and password are only used during the install process
-        self.user = args.server_user
-        self.password = args.server_password
+        self._user = args.server_user
+        self._password = args.server_password
 
         return True
 
     def validate_config(self, config):
         """
+        Virtual Override
         Validate configuration file arguments and save values to our config object.
         :param config: A ConfigParser object.
         """
@@ -155,23 +178,24 @@ class SilentDuneServerModule(BaseModule):
                 _logger.error('Config value for "server" is invalid ip address')
                 return False
 
-        self.server = config.get(self._config_section, 'server')
-        self.port = config.get(self._config_section, 'port')
-        self.no_tls = True if config.get(self._config_section, 'no_tls').lower() == 'yes' else False
-        self.bundle = config.get(self._config_section, 'bundle')
+        self._server = config.get(self._config_section, 'server')
+        self._port = config.get(self._config_section, 'port')
+        self._no_tls = True if config.get(self._config_section, 'no_tls').lower() == 'yes' else False
+        self._bundle_name = config.get(self._config_section, 'bundle')
 
         return True
 
     def prepare_config(self, config):
         """
+        Virtual Override
         Return the configuration file structure. Any new configuration items should be added here.
         Note: The order should be reverse of the expected order in the configuration file.
         """
 
-        config.set(self._config_section, 'server', self.server)
-        config.set(self._config_section, 'port', self.port)
-        config.set(self._config_section, 'use_tls', 'no' if self.no_tls else 'yes')
-        config.set(self._config_section, 'bundle', self.bundle)
+        config.set(self._config_section, 'server', self._server)
+        config.set(self._config_section, 'port', self._port)
+        config.set(self._config_section, 'use_tls', 'no' if self._no_tls else 'yes')
+        config.set(self._config_section, 'bundle', self._bundle_name)
 
         config.set_comment(self._config_section, 'server_module',
                            _('; Silent Dune Server Module Configuration\n'))  # noqa
@@ -184,5 +208,162 @@ class SilentDuneServerModule(BaseModule):
         config.set_comment(self._config_section, 'use_tls',
                            _('; Use a secure connection when communicating with the management server.'))  # noqa
 
-        return config
+        return True
 
+    def install_module(self, installer):
+        """
+        Virtual Override
+        Register and download our bundle information from the server.
+        """
+        self._sds_conn = SDSConnection(self._server, self._no_tls, self._port)
+
+        if not self._sds_conn.connect_with_password(self._user, self._password):
+            return False
+
+        if not self._register_node(installer):
+            return False
+
+        if not self._get_rule_bundle():
+            return False
+
+        if not self._set_node_bundle():
+            return False
+
+        # TODO: Get and Upload adapter interface list to server
+        # Note: It might be better to call ifconfig instead of using netifaces to get adapter info.
+
+        if not self._download_bundleset(installer):
+            return False
+
+        return True
+
+    def _register_node(self, installer):
+        """
+        Contact the server to register this node with the server.
+        """
+
+        # Look for existing Node record first.
+        self._node, status_code = self._sds_conn.get_node_by_machine_id(installer.machine_id)
+
+        if status_code != requests.codes.ok:
+            return False
+
+        if self._node:
+            _logger.warning('Node already registered, using previously registered node information.')
+            # TODO: Maybe we should query the user here. Multiple nodes with the same machine_id will be a problem.
+        else:
+
+            self.cwrite('Registering Node...  ')
+
+            node = Node(
+                platform=installer.firewall_platform,
+                os=platform.system().lower(),
+                dist=platform.dist()[0],
+                dist_version=platform.dist()[1],
+                hostname=socket.gethostname(),
+                python_version=sys.version.replace('\n', ''),
+                machine_id=installer.machine_id,
+            )
+
+            # Attempt to register this node on the SD server.
+            self._node, status_code = self._sds_conn.register_node(node)
+
+            if not self._node or self._node.id is None:
+                self.cwriteline('[Failed]', 'Register Node failed, unknown reason.')
+                return False
+
+            self.cwriteline('[OK]', 'Node successfully registered.')
+
+        return True
+
+    def _get_rule_bundle(self):
+
+        if self._bundle_name:
+
+            self.cwrite('Looking up rule bundle...')
+
+            self._bundle, status_code = self._sds_conn.get_bundle_by_name(self._bundle_name)
+
+            if self._bundle and self._bundle.id > 0:
+                self.cwriteline('[OK]', 'Found rule bundle.')
+                return True
+
+            self.cwriteline('[Failed]', 'Unable to find rule bundle named "{0}".'.format(self._bundle_name))
+
+            _logger.warning(_("Unable to find the rule bundle specified. The installer can try to lookup "  # noqa
+                              "and use the default server rule bundle."))  # noqa
+
+            self.cwrite(_('Do you want to use the server default rule bundle? [y/N]:'))  # noqa
+            result = sys.stdin.read(1)
+
+            if result not in {'y', 'Y'}:
+                _logger.debug('User aborting installation process.')
+                return False
+
+        self.cwrite('Looking up the server default rule bundle...')
+
+        self._bundle, status_code = self._sds_conn.get_default_bundle()
+
+        if not self._bundle or self._bundle.id is None:
+            self.cwriteline('[Failed]', 'Default bundle lookup failed.')
+            return False
+
+        self.cwriteline('[OK]', 'Found default rule bundle.')
+
+        return True
+
+    def _set_node_bundle(self):
+
+        self.cwrite('Setting Node rule bundle...')
+
+        data = NodeBundle(node=self._node.id, bundle=self._bundle.id)
+
+        self._node_bundle, status_code = self._sds_conn.create_or_update_node_bundle(data)
+
+        if not self._node_bundle:
+            self.cwriteline('[Failed]', 'Unable to set Node rule bundle.')
+            return False
+
+        self.cwriteline('[OK]', 'Node rule bundle successfully set.')
+        return True
+
+    def _download_bundleset(self, installer):
+
+        self.cwrite('Downloading bundle set rules...')
+
+        # Get the machineset IDs assigned to the bundle
+        self._bundle_machine_subsets, status_code = self._sds_conn.get_bundle_machine_subsets(self._node_bundle)
+        if self._bundle_machine_subsets is None:
+            self.cwriteline('[Failed]', 'No bundle machine subsets found.')
+            return False
+
+        files = self._sds_conn.write_bundle_chainsets(installer.config_root, self._bundle_machine_subsets)
+
+        if len(files) == 0:
+            return False
+
+        self.cwriteline('[OK]', 'Successfully downloaded bundle set rules.')
+
+        if not installer.root_user:
+            self.cwriteline('*** Unable to validate rules, not running as privileged user. ***')
+            return True
+
+        self.cwrite('Validating bundle set rules...')
+
+        # Loop through files and test the validity of the file.
+        for file in iter(files):
+
+            if not os.path.exists(file):
+                _logger.critical('Rule file does not exist.')
+                return False
+
+            cmd = '{0} --test < "{1}"'.format(installer.iptables_restore, file)
+
+            try:
+                check_output(cmd, shell=True)
+            except CalledProcessError:
+                self.cwriteline('[Failed]', 'Rule set iptables test failed "{0}"'.format(file))
+
+        self.cwriteline('[OK]', 'Rule validation successfull.')
+
+        return True

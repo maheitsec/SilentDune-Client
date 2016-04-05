@@ -21,12 +21,13 @@
 import logging
 import os
 
+from utils.console import ConsoleBase
 from utils.module_loading import import_by_str
 
 _logger = logging.getLogger('sd-client')
 
 
-class BaseModule(object):
+class BaseModule(ConsoleBase):
     """
     This is the Virtual module object every module should inherit from.
     Each property and method are virtual and can be overridden as needed.
@@ -81,9 +82,41 @@ class BaseModule(object):
         """
         Add the module configuration items that need to be saved to the configuration file.
         :param config: A ClientConfiguration object.
-        :return: Return the modified ClientConfiguration object.
+        :return: True if configuration file values were prepared correctly, otherwise False.
         """
-        return config
+        return True
+
+    def pre_install(self, installer):
+        """
+        Called by the installer before the formal install process starts.
+        :param installer: The Installer object.
+        :return: True if successful, otherwise False.
+        """
+        return True
+
+    def install_module(self, installer):
+        """
+        Called by the installer during the formal install process.
+        :param installer: The Installer object.
+        :return: True if successful, otherwise False.
+        """
+        return True
+
+    def post_install(self, installer):
+        """
+        Called by the installer after the formal install process has completed.
+        :param installer: The Installer object.
+        :return: True if successful, otherwise False.
+        """
+        return True
+
+    def uninstall_module(self, installer):
+        """
+        Called by the installer during an uninstall process.
+        :param installer: The Installer object.
+        :return: True if successful, otherwise False.
+        """
+        return True
 
 
 def __load_modules__(dir='modules'):

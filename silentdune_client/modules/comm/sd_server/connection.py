@@ -45,9 +45,8 @@ class SDSConnection (ConsoleBase):
     _password = None
     _ip = None
 
-    def __init__(self, debug, server, no_tls, port):
+    def __init__(self, server, no_tls, port):
 
-        self.debug = debug
         self._server = server
         self._no_tls = no_tls
         self._port = port
@@ -114,7 +113,6 @@ class SDSConnection (ConsoleBase):
 
         self.authenticated = False
 
-        _logger.debug('test debug')
         self.cwrite('Resolving server...  ')
 
         try:

@@ -19,30 +19,20 @@
 #
 
 import argparse
-from collections import OrderedDict
 import gettext
 import logging
 import os
-import platform
 import shutil
-import socket
 import sys
 from subprocess import check_output, CalledProcessError
 
-import requests
-
-# TODO: Change up sd_server module to a loadable module for the installer.
-from modules.comm.sd_server.json_models import Node, NodeBundle
-from modules.comm.sd_server.connection import SDSConnection
-
+import utils.configuration as configuration
 from utils.configuration import ClientConfiguration
 from utils.console import ConsoleBase
 from utils.log import setup_logging
 from utils.misc import which, determine_config_root
 from utils.node_info import get_machine_id, write_machine_id, node_info_dump
 from modules import __load_modules__
-from utils.module_loading import import_by_str
-
 
 try:
     from configparser import ConfigParser
@@ -55,76 +45,63 @@ _logger = logging.getLogger('sd-client')
 class Installer(ConsoleBase):
 
     # Modules dictionary list
-    _modules = None
+    __modules = None
 
     # parser args
     args = None
     bad_arg = False
 
     # External programs
-    _ps = None
-    _pgrep = None
-    _iptables_exec = None
-    _iptables_save = None
-    _iptables_restore = None
-
-    # Communication
-    # _oauth_crypt_token = None
-    # _cookies = None
-    _sds_conn = None
+    ps = None
+    pgrep = None
+    iptables_exec = None
+    iptables_save = None
+    iptables_restore = None
 
     # Configuration Items
-    _root_user = False
-    _config_root = None
-    _config_p = None
-    _machine_id = None
+    root_user = False
+    config_root = None
+    config_p = None
+    machine_id = None
 
     # Upstart
-    _ups_installed = False
+    ups_installed = False
 
     # Systemd
-    _sysd_installed = False
+    sysd_installed = False
 
     # sysvinit
-    _sysv_installed = False
+    sysv_installed = False
 
     # Previous firewall service
-    _ufw = False
-    _firewalld = False
-    _iptables = False
+    ufw = False
+    firewalld = False
+    iptables = False
 
     # Firewall_platform - Currently only iptables is supported.
-    _firewall_platform = 'iptables'
-
-    # Node object
-    _node = None
-    _bundle = None
-    _node_bundle = None
-    _bundle_machine_subsets = None
+    firewall_platform = 'iptables'
 
     def __init__(self, args, modules):
 
-        self._modules = modules
+        self.__modules = modules
 
-        self._config_p = ConfigParser(allow_no_value=True)
+        self.config_p = ConfigParser(allow_no_value=True)
         self.args = args
-        self.debug = args.debug  # Save debug value for cwrite methods.
-        # self._sds_conn = SDSConnection(args.debug, args.server, args.no_tls, args.port)
 
     def _check_for_external_progs(self):
 
         # Check for external programs here
-        self._ps = which('ps')
-        self._pgrep = which('pgrep')
-        self._iptables_exec = which('iptables')
-        self._iptables_save = which('iptables-save')
-        self._iptables_restore = which('iptables-restore')
+        self.ps = which('ps')
+        self.pgrep = which('pgrep')
+        self.iptables_exec = which('iptables')
+        self.iptables_save = which('iptables-save')
+        self.iptables_restore = which('iptables-restore')
 
-        if self._ps is None or self._pgrep is None:
+        if self.ps is None or self.pgrep is None:
             _logger.critical('Unable to determine which services are running on this machine.')
             return False
 
-        if self._iptables is None or self._iptables_save is None or self._iptables_restore is None:
+        if self.iptables is None or self.iptables_save is None or self.iptables_restore is None:
             _logger.critical('Unable to find iptables executables.')
             return False
 
@@ -138,24 +115,24 @@ class Installer(ConsoleBase):
         self.cwrite('Determining Init system...  ')
 
         # See if this system is an upstart setup.
-        self._ups_installed = which('initctl') is not None and os.path.isfile(which('initctl'))
+        self.ups_installed = which('initctl') is not None and os.path.isfile(which('initctl'))
 
         # See if this system is a systemd setup.
-        self._sysd_installed = which('systemctl') is not None and os.path.exists('/run/systemd/system')
+        self.sysd_installed = which('systemctl') is not None and os.path.exists('/run/systemd/system')
 
         # See if this system is a sysvinit setup.
-        self._sysv_installed = which('service') is not None and not self._sysd_installed and not self._ups_installed
+        self.sysv_installed = which('service') is not None and not self.sysd_installed and not self.ups_installed
 
         # If we didn't detect the init system, abort.
-        if not self._ups_installed and not self._sysd_installed and not self._sysv_installed:
+        if not self.ups_installed and not self.sysd_installed and not self.sysv_installed:
             _logger.critical('Unable to detect init system used on this machine.')
             return False
 
-        if self._ups_installed:
+        if self.ups_installed:
             self.cwriteline('[OK]', 'Detected Upstart based init system.')
-        if self._sysd_installed:
+        if self.sysd_installed:
             self.cwriteline('[OK]', 'Detected Systemd based init system.')
-        if self._sysv_installed:
+        if self.sysv_installed:
             self.cwriteline('[OK]', 'Detected sysvinit based init system.')
 
         return True
@@ -167,10 +144,10 @@ class Installer(ConsoleBase):
 
         self.cwrite('Checking for firewall service...  ')
 
-        pgrep = self._pgrep
+        pgrep = self.pgrep
 
         # Check to see if ufw is running
-        if self._ups_installed:
+        if self.ups_installed:
 
             prog = which('ufw')
 
@@ -180,7 +157,7 @@ class Installer(ConsoleBase):
                     pid = check_output('{0} -f "{1}"'.format(pgrep, prog), shell=True)[:]
 
                     if pid and len(pid) > 1:
-                        self._ufw = True
+                        self.ufw = True
                         self.cwriteline('[OK]', 'Detected running ufw (uncomplicated firewall) instance.')
 
                 except CalledProcessError:
@@ -190,7 +167,7 @@ class Installer(ConsoleBase):
                 _logger.debug('ufw executable not found.')
 
         # Check to see if firewalld is running
-        if self._sysd_installed:
+        if self.sysd_installed:
 
             prog = which('firewalld')
 
@@ -200,7 +177,7 @@ class Installer(ConsoleBase):
                     pid = check_output('{0} -f "{1}"'.format(pgrep, prog), shell=True)[:]
 
                     if pid and len(pid) > 1:
-                        self._firewalld = True
+                        self.firewalld = True
                         self.cwriteline('[OK]', 'Detected running firewalld instance.')
 
                 except CalledProcessError:
@@ -211,7 +188,7 @@ class Installer(ConsoleBase):
 
         # The iptables service could be running regardless of the init system used on this machine.
         # Test for a running iptables instance.
-        if not self._ufw and not self._firewalld:
+        if not self.ufw and not self.firewalld:
 
             # Check the iptables service status
             # TODO: Need a different check for each init system
@@ -220,14 +197,14 @@ class Installer(ConsoleBase):
 
                 if output and len(output) > 1 and \
                         'unrecognized service' not in output and 'Table:' in output:
-                    self._iptables = True
+                    self.iptables = True
                     self.cwriteline('[OK]', 'Detected running iptables instance.')
 
             except CalledProcessError:
                 pass
 
         # check to see that we detected a running firewall service
-        if not self._ufw and not self._firewalld and not self._iptables:
+        if not self.ufw and not self.firewalld and not self.iptables:
 
             # We were unable to detect the running firewall service.  Its a bad thing, but maybe
             # we should let the user decided if they want to continue.
@@ -245,135 +222,6 @@ class Installer(ConsoleBase):
 
         return True
 
-    def _register_node(self):
-
-        # Look for existing Node record first.
-        self._node, status_code = self._sds_conn.get_node_by_machine_id(self._machine_id)
-
-        if status_code != requests.codes.ok:
-            return False
-
-        if self._node:
-            _logger.warning('Node already registered, using previously registered node information.')
-            # TODO: Maybe we should query the user here. Multiple nodes with the same machine_id will be a problem.
-        else:
-
-            self.cwrite('Registering Node...  ')
-
-            nobj = Node(
-                platform=self._firewall_platform,
-                os=platform.system().lower(),
-                dist=platform.dist()[0],
-                dist_version=platform.dist()[1],
-                hostname=socket.gethostname(),
-                python_version=sys.version.replace('\n', ''),
-                machine_id=self._machine_id,
-            )
-
-            # Attempt to register this node on the SD server.
-            self._node, status_code = self._sds_conn.register_node(nobj)
-
-            if not self._node or self._node.id is None:
-                self.cwriteline('[Failed]', 'Register Node failed, unknown reason.')
-                return False
-
-            self.cwriteline('[OK]', 'Node successfully registered.')
-
-        return True
-
-    def _get_rule_bundle(self):
-
-        if self.args.bundle:
-
-            self.cwrite('Looking up rule bundle...')
-
-            self._bundle, status_code = self._sds_conn.get_bundle_by_name(self.args.bundle)
-
-            if self._bundle and self._bundle.id > 0:
-                self.cwriteline('[OK]', 'Found rule bundle.')
-                print(self._bundle.to_json())
-                return True
-
-            self.cwriteline('[Failed]', 'Unable to find rule bundle named "{0}".'.format(self.args.bundle))
-
-            _logger.warning(_("Unable to find the rule bundle specified. The installer can try to lookup "  # noqa
-                              "and use the default server rule bundle."))  # noqa
-
-            self.cwrite(_('Do you want to use the server default rule bundle? [y/N]:'))  # noqa
-            result = sys.stdin.read(1)
-
-            if result not in {'y', 'Y'}:
-                _logger.debug('User aborting installation process.')
-                return False
-
-        self.cwrite('Looking up the server default rule bundle...')
-
-        self._bundle, status_code = self._sds_conn.get_default_bundle()
-
-        if not self._bundle or self._bundle.id is None:
-            self.cwriteline('[Failed]', 'Default bundle lookup failed.')
-            return False
-
-        self.cwriteline('[OK]', 'Found default rule bundle.')
-
-        return True
-
-    def _set_node_bundle(self):
-
-        self.cwrite('Setting Node rule bundle...')
-
-        data = NodeBundle(node=self._node.id, bundle=self._bundle.id)
-
-        self._node_bundle, status_code = self._sds_conn.create_or_update_node_bundle(data)
-
-        if not self._node_bundle:
-            self.cwriteline('[Failed]', 'Unable to set Node rule bundle.')
-            return False
-
-        self.cwriteline('[OK]', 'Node rule bundle successfully set.')
-        return True
-
-    def _download_bundleset(self):
-
-        self.cwrite('Downloading bundle set rules...')
-
-        # Get the chainset IDs assigned to the bundle
-        self._bundle_machine_subsets, status_code = self._sds_conn.get_bundle_machine_subsets(self._node_bundle)
-        if self._bundle_machine_subsets is None:
-            self.cwriteline('[Failed]', 'No bundle machine subsets found.')
-            return False
-
-        files = self._sds_conn.write_bundle_chainsets(self._config_root, self._bundle_machine_subsets)
-
-        if len(files) == 0:
-            return False
-
-        self.cwriteline('[OK]', 'Successfully downloaded bundle set rules.')
-
-        if not self._root_user:
-            self.cwriteline('*** Unable to validate rules, not running as privileged user. ***')
-            return True
-
-        self.cwrite('Validating bundle set rules...')
-
-        # Loop through files and test the validity of the file.
-        for file in iter(files):
-
-            if not os.path.exists(file):
-                _logger.critical('Rule file does not exist.')
-                return False
-
-            cmd = '{0} --test < "{1}"'.format(self._iptables_restore, file)
-
-            try:
-                check_output(cmd, shell=True)
-            except CalledProcessError:
-                self.cwriteline('[Failed]', 'Rule set iptables test failed "{0}"'.format(file))
-
-        self.cwriteline('[OK]', 'Rule validation successfull.')
-
-        return True
-
     def write_config(self):
         """
         Setup the configuration and write it out.
@@ -384,7 +232,7 @@ class Installer(ConsoleBase):
 
         # Check to see if we are using a home directory.
         home = os.path.join(os.path.expanduser('~'), '.silentdune')
-        if self._config_root == home:
+        if self.config_root == home:
             # Change the default path for pid and log file to home directory.
             cc.set('settings', 'pidfile', os.path.join(home, 'sdc.pid'))
             cc.set('settings', 'logfile', os.path.join(home, 'sdc.log'))
@@ -392,18 +240,22 @@ class Installer(ConsoleBase):
         # Set the previous firewall service
         pfws = 'unknown'
 
-        if self._ufw:
+        if self.ufw:
             pfws = 'ufw'
-        elif self._firewalld:
+        elif self.firewalld:
             pfws = 'firewalld'
-        elif self._iptables:
+        elif self.iptables:
             pfws = 'iptables'
 
         cc.set('settings', 'previous_firewall_service', pfws)
 
         # Loop through the modules and have them set their configuration information
-        for mod in self._modules:
-            cc = mod.prepare_config(cc)
+        for mod in self.__modules:
+            result = mod.prepare_config(cc)
+
+            if not result:
+                _logger.error('Preparing configuration file items failed in module {0}.'.format(mod.get_name()))
+                return False
 
         return cc.write_config()
 
@@ -418,8 +270,8 @@ class Installer(ConsoleBase):
         # TODO: Restore previous firewall service
 
         # if we are running as root, delete the configuration directory
-        if self._root_user and self._config_root is not None and os.path.exists(self._config_root):
-            shutil.rmtree(self._config_root)
+        if self.root_user and self.config_root is not None and os.path.exists(self.config_root):
+            shutil.rmtree(self.config_root)
 
         self.cwriteline('[OK]', 'Finished cleaning up.')
         return
@@ -432,15 +284,20 @@ class Installer(ConsoleBase):
         if not self._check_for_external_progs():
             return False
 
-        self._config_root = determine_config_root()
-        if not self._config_root:
+        self.config_root = determine_config_root()
+        if not self.config_root:
             return False
 
+        # Have each module do their pre install work now.
+        for mod in self.__modules:
+            if not mod.pre_install(self):
+                return False
+
         # Determine the unique machine id for this client
-        self._machine_id = get_machine_id()
-        if not self._machine_id:
-            self._machine_id = write_machine_id()
-        if not self._machine_id:
+        self.machine_id = get_machine_id()
+        if not self.machine_id:
+            self.machine_id = write_machine_id()
+        if not self.machine_id:
             return False
 
         if not self._init_system_check():
@@ -449,23 +306,10 @@ class Installer(ConsoleBase):
         if not self._firewall_check():
             return False
 
-        # if not self._sds_conn.connect_with_password(self.args.user, self.args.password):
-        #     return False
-        #
-        # if not self._register_node():
-        #     return False
-        #
-        # if not self._get_rule_bundle():
-        #     return False
-        #
-        # if not self._set_node_bundle():
-        #     return False
-        #
-        # # TODO: Get and Upload adapter interface list to server
-        # # Note: It might be better to call ifconfig instead of using netifaces to get adapter info.
-        #
-        # if not self._download_bundleset():
-        #     return False
+        # Have each module do their install work now.
+        for mod in self.__modules:
+            if not mod.install_module(self):
+                return False
 
         if not self.write_config():
             return False
@@ -478,6 +322,11 @@ class Installer(ConsoleBase):
 
         # TODO: Enable SD-Client service and start service
 
+        # Have each module do their post install work now.
+        for mod in self.__modules:
+            if not mod.post_install(self):
+                return False
+
         return True
 
 
@@ -487,8 +336,9 @@ def run():
     # if '/install' in base_path:
     #     base_path, tail = os.path.split(base_path)
 
-    # Setup application logging
-    _logger.addHandler(setup_logging('--debug' in sys.argv))
+    # Set global debug value and setup application logging.
+    configuration.debug = setup_logging('--debug' in sys.argv)
+    _logger.addHandler(configuration.debug)
 
     # Setup i18n - Good for 2.x and 3.x python.
     kwargs = {}
@@ -519,8 +369,7 @@ def run():
 
     # Have each module validate arguments.
     for mod in module_list:
-        success = mod.validate_arguments(args)
-        if not success:
+        if not mod.validate_arguments(args):
             parser.print_help()
             exit(1)
 
@@ -531,7 +380,13 @@ def run():
     i = Installer(args, module_list)
 
     if not i.start_install():
+
+        # Have each module do their uninstall work now.
+        for mod in module_list:
+            mod.uninstall_module(i)
+
         i.clean_up()
+
         _logger.error('Install aborted.')
         return 1
 

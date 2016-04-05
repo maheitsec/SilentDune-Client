@@ -21,6 +21,8 @@
 import logging
 import sys
 
+import utils.configuration as configuration
+
 _logger = logging.getLogger('sd-client')
 
 
@@ -29,8 +31,6 @@ class ConsoleBase(object):
     Output messages to the console.
     """
 
-    debug = False
-
     # http://stackoverflow.com/questions/11245381/formatting-console-output
 
     def cwrite(self, message, debug_msg=None):
@@ -38,7 +38,7 @@ class ConsoleBase(object):
         Write a message to stdout or to debug logger with no linefeed.
         """
 
-        if self.debug:
+        if configuration.debug:
             if debug_msg is None:
                 _logger.debug(message)
             else:
@@ -52,7 +52,7 @@ class ConsoleBase(object):
         Write a message to stdout or to debug logger with linefeed.
         """
 
-        if self.debug:
+        if configuration.debug:
             if debug_msg is None:
                 _logger.debug(message)
             else:

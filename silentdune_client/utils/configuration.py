@@ -33,6 +33,9 @@ except ImportError:
 _logger = logging.getLogger('sd-client')
 
 
+# Global debug variable
+debug = False
+
 class ClientConfiguration(object):
 
     _config_root = None
