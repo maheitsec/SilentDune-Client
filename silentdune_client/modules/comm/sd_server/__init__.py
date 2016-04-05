@@ -210,7 +210,7 @@ class SilentDuneServerModule(BaseModule):
 
         return True
 
-    def install_module(self, installer):
+    def install_module(self, node_info):
         """
         Virtual Override
         Register and download our bundle information from the server.
@@ -220,7 +220,7 @@ class SilentDuneServerModule(BaseModule):
         if not self._sds_conn.connect_with_password(self._user, self._password):
             return False
 
-        if not self._register_node(installer):
+        if not self._register_node(node_info):
             return False
 
         if not self._get_rule_bundle():
@@ -232,18 +232,18 @@ class SilentDuneServerModule(BaseModule):
         # TODO: Get and Upload adapter interface list to server
         # Note: It might be better to call ifconfig instead of using netifaces to get adapter info.
 
-        if not self._download_bundleset(installer):
+        if not self._download_bundleset(node_info):
             return False
 
         return True
 
-    def _register_node(self, installer):
+    def _register_node(self, node_info):
         """
         Contact the server to register this node with the server.
         """
 
         # Look for existing Node record first.
-        self._node, status_code = self._sds_conn.get_node_by_machine_id(installer.machine_id)
+        self._node, status_code = self._sds_conn.get_node_by_machine_id(node_info.machine_id)
 
         if status_code != requests.codes.ok:
             return False
@@ -256,13 +256,13 @@ class SilentDuneServerModule(BaseModule):
             self.cwrite('Registering Node...  ')
 
             node = Node(
-                platform=installer.firewall_platform,
+                platform=node_info.firewall_platform,
                 os=platform.system().lower(),
                 dist=platform.dist()[0],
                 dist_version=platform.dist()[1],
                 hostname=socket.gethostname(),
                 python_version=sys.version.replace('\n', ''),
-                machine_id=installer.machine_id,
+                machine_id=node_info.machine_id,
             )
 
             # Attempt to register this node on the SD server.
@@ -327,7 +327,7 @@ class SilentDuneServerModule(BaseModule):
         self.cwriteline('[OK]', 'Node rule bundle successfully set.')
         return True
 
-    def _download_bundleset(self, installer):
+    def _download_bundleset(self, node_info):
 
         self.cwrite('Downloading bundle set rules...')
 
@@ -337,14 +337,14 @@ class SilentDuneServerModule(BaseModule):
             self.cwriteline('[Failed]', 'No bundle machine subsets found.')
             return False
 
-        files = self._sds_conn.write_bundle_chainsets(installer.config_root, self._bundle_machine_subsets)
+        files = self._sds_conn.write_bundle_chainsets(node_info.config_root, self._bundle_machine_subsets)
 
         if len(files) == 0:
             return False
 
         self.cwriteline('[OK]', 'Successfully downloaded bundle set rules.')
 
-        if not installer.root_user:
+        if not node_info.root_user:
             self.cwriteline('*** Unable to validate rules, not running as privileged user. ***')
             return True
 
@@ -357,7 +357,7 @@ class SilentDuneServerModule(BaseModule):
                 _logger.critical('Rule file does not exist.')
                 return False
 
-            cmd = '{0} --test < "{1}"'.format(installer.iptables_restore, file)
+            cmd = '{0} --test < "{1}"'.format(node_info.iptables_restore, file)
 
             try:
                 check_output(cmd, shell=True)

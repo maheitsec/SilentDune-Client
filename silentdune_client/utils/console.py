@@ -21,7 +21,7 @@
 import logging
 import sys
 
-import utils.configuration as configuration
+import utils.configuration
 
 _logger = logging.getLogger('sd-client')
 
@@ -38,7 +38,7 @@ class ConsoleBase(object):
         Write a message to stdout or to debug logger with no linefeed.
         """
 
-        if configuration.debug:
+        if utils.configuration.debug:
             if debug_msg is None:
                 _logger.debug(message)
             else:
@@ -52,7 +52,7 @@ class ConsoleBase(object):
         Write a message to stdout or to debug logger with linefeed.
         """
 
-        if configuration.debug:
+        if utils.configuration.debug:
             if debug_msg is None:
                 _logger.debug(message)
             else:

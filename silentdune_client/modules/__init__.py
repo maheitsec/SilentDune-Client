@@ -86,7 +86,7 @@ class BaseModule(ConsoleBase):
         """
         return True
 
-    def pre_install(self, installer):
+    def pre_install(self, node_info):
         """
         Called by the installer before the formal install process starts.
         :param installer: The Installer object.
@@ -94,7 +94,7 @@ class BaseModule(ConsoleBase):
         """
         return True
 
-    def install_module(self, installer):
+    def install_module(self, node_info):
         """
         Called by the installer during the formal install process.
         :param installer: The Installer object.
@@ -102,7 +102,7 @@ class BaseModule(ConsoleBase):
         """
         return True
 
-    def post_install(self, installer):
+    def post_install(self, node_info):
         """
         Called by the installer after the formal install process has completed.
         :param installer: The Installer object.
@@ -110,7 +110,7 @@ class BaseModule(ConsoleBase):
         """
         return True
 
-    def uninstall_module(self, installer):
+    def uninstall_module(self, node_info):
         """
         Called by the installer during an uninstall process.
         :param installer: The Installer object.

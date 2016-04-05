@@ -22,6 +22,7 @@
 import logging
 import os
 from collections import OrderedDict
+from utils.node_info import NodeInformation
 
 from utils.misc import determine_config_root
 
@@ -47,16 +48,29 @@ class ClientConfiguration(object):
 
         self._config_root = determine_config_root()
 
+        node_info = NodeInformation()
+
         if not config_file:
             self._config_file = os.path.join(self._config_root, 'sdc.conf')
 
         # Setup the default values for the base settings
-        self.set('settings', 'pidfile', '/var/run/silentdune/sdc.pid')
+        self.set('settings', 'pidfile', node_info.pid_file)
+        self.set('settings', 'logfile', node_info.log_file)
 
         self.set('settings', 'user', 'silentdune')
         self.set('settings', 'group', 'silentdune')
-        self.set('settings', 'previous_firewall_service', '')
-        self.set('settings', 'logfile', '/var/log/silentdune/sdc.log')
+
+        # Set the previous firewall service
+        pfws = 'unknown'
+
+        if node_info.ufw:
+            pfws = 'ufw'
+        elif node_info.firewalld:
+            pfws = 'firewalld'
+        elif node_info.iptables:
+            pfws = 'iptables'
+
+        self.set('settings', 'previous_firewall_service', pfws)
 
         # Set the section heading comments
         self.set_comment('settings', 'settings', (_('; Silent Dune Client Configuration File\n'  # noqa
