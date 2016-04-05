@@ -62,10 +62,10 @@ class Installer(ConsoleBase):
         Setup the configuration and write it out.
         """
 
-        # Create an empty configuration object, using the default path and filename.
+        # Create the configuration object.
         cc = ClientConfiguration()
 
-        # Loop through the modules and have them set their configuration information
+        # Loop through the modules and have them set their configuration information.
         for mod in self.__modules:
             result = mod.prepare_config(cc)
 
@@ -73,6 +73,7 @@ class Installer(ConsoleBase):
                 _logger.error('Preparing configuration file items failed in module {0}.'.format(mod.get_name()))
                 return False
 
+        # Write the configuration file out.
         return cc.write_config()
 
     def clean_up(self):

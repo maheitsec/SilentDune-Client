@@ -198,7 +198,7 @@ class NodeInformation(ConsoleBase):
             # Check the iptables service status
             # TODO: Need a different check for each init system
             try:
-                output = check_output(['service', 'iptables status'], shell=True)[:]
+                output = check_output('service iptables status', shell=True)[:]
 
                 if output and len(output) > 1 and \
                                 'unrecognized service' not in output and 'Table:' in output:
@@ -304,8 +304,8 @@ class NodeInformation(ConsoleBase):
             args = '{0} {1}'.format(cmd, name)
 
         if self.ups_installed:
-            prog = '{0}'.format(cmd)
-            args = '{1}'.format(name)
+            prog = 'service'
+            args = '{0} {1}'.format(name, cmd)
 
         try:
             check_output([prog, args])
@@ -343,6 +343,8 @@ class NodeInformation(ConsoleBase):
 
         # System D mask service
         if self.sysd_installed:
+            if not self._run_service_command('disable', name):
+                return False
             return self._run_service_command('mask', name)
 
         if self.ups_installed:
@@ -365,10 +367,13 @@ class NodeInformation(ConsoleBase):
         if self.sysv_installed:
             return self._run_service_command('enable', name)
 
-        # System D mask service
+        # SystemD service
         if self.sysd_installed:
-            return self._run_service_command('unmask', name)
+            if not self._run_service_command('unmask', name):
+                return False
+            return self._run_service_command('enable', name)
 
+        # Upstart service
         if self.ups_installed:
 
             file = '/etc/init/{0}.override'.format(name)
@@ -381,5 +386,43 @@ class NodeInformation(ConsoleBase):
                     return True
                 except CalledProcessError:
                     _logger.error('Enabling upstart service failed.')
+
+        return False
+
+    def is_service_running(self, name):
+        """
+        Check to see if the given service is running.
+        :param name: Name of service
+        :return: True if service is running, otherwise False
+        """
+        # Sys V
+        if self.sysv_installed:
+            try:
+                output = check_output('service {0} status | grep running', shell=True)
+                if 'running' in output:
+                    return True
+                return False
+            except CalledProcessError:
+                return False
+
+        # SystemD service
+        if self.sysd_installed:
+            try:
+                output = check_output('systemctl status {0} | grep running', shell=True)
+                if 'running' in output:
+                    return True
+                return False
+            except CalledProcessError:
+                return False
+
+        # Upstart service
+        if self.ups_installed:
+            try:
+                output = check_output('service {0} status | grep running', shell=True)
+                if 'running' in output:
+                    return True
+                return False
+            except CalledProcessError:
+                return False
 
         return False
