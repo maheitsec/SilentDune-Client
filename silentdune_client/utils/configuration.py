@@ -23,7 +23,7 @@ import logging
 import os
 from collections import OrderedDict
 
-from utils.misc import determine_config_root
+from utils.misc import determine_config_root, get_active_firewall
 
 try:
     from configparser import ConfigParser
@@ -48,7 +48,9 @@ class ClientConfiguration(object):
 
         self._config_root = determine_config_root()
 
-        # node_info = NodeInformation()
+        # Change the default path for pid and log file to config_root.
+        self.set('settings', 'pidfile', os.path.join(self._config_root, 'sdc.pid'))
+        self.set('settings', 'logfile', os.path.join(self._config_root, 'sdc.log'))
 
         if not config_file:
             self._config_file = os.path.join(self._config_root, 'sdc.conf')
@@ -60,10 +62,8 @@ class ClientConfiguration(object):
         self.set('settings', 'user', 'silentdune')
         self.set('settings', 'group', 'silentdune')
 
-        # Set the previous firewall service.
-        pfws = 'unknown'
-
-        self.set('settings', 'previous_firewall_service', pfws)
+        # Set the previous firewall service to the currently running firewall.
+        self.set('settings', 'previous_firewall_service', get_active_firewall())
 
         # Set the section heading comments
         self.set_comment('settings', 'settings', (_('; Silent Dune Client Configuration File\n'  # noqa

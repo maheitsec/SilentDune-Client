@@ -21,6 +21,7 @@
 import logging
 import os
 import socket
+from subprocess import check_output, CalledProcessError
 
 _logger = logging.getLogger('sd-client')
 
@@ -103,6 +104,58 @@ def determine_config_root():
         _logger.debug('Configuration root set to "{0}"'.format(config_root))
 
     return config_root
+
+def get_active_firewall():
+    """
+    Determine which firewall service is running on this system.
+    """
+    pgrep = which('pgrep')
+
+    # Check to see if ufw is running
+    prog = which('ufw')
+    if prog:
+
+        try:
+            pid = check_output('{0} -f "{1}"'.format(pgrep, prog), shell=True)[:]
+            if pid:
+                return prog
+        except CalledProcessError:
+            pass
+
+    # Check to see if firewalld is running
+    prog = which('firewalld')
+    if prog:
+
+        try:
+            pid = check_output('{0} -f "{1}"'.format(pgrep, prog), shell=True)[:]
+            if pid:
+                return prog
+        except CalledProcessError:
+            pass
+
+    # Test for a running iptables instance.
+    prog = which('iptables')
+    if prog:
+
+        try:
+            pid = check_output('{0} -f "{1}"'.format(pgrep, prog), shell=True)[:]
+            if pid:
+                return prog
+        except CalledProcessError:
+            pass
+
+    # Test for a running silent dune client instance.
+    prog = which('sdc-service')
+    if prog:
+
+        try:
+            pid = check_output('{0} -f "{1}"'.format(pgrep, prog), shell=True)[:]
+            if pid:
+                return prog
+        except CalledProcessError:
+            pass
+
+    return None
 
 
 # http://stackoverflow.com/questions/319279/how-to-validate-ip-address-in-python

@@ -18,24 +18,14 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
-import unittest
-
+import pytest
 from utils.node_info import NodeInformation
 
-# import pytest
+
+def test_node_info():
+    """
+    Test that the NodeInformation init process doesn't fail.
+    """
+    assert not NodeInformation().error
 
 
-class TestNodeInformation(unittest.TestCase):
-
-    def test_node_info(self):
-        """
-        Test that the NodeInformation init process doesn't fail.
-        :return:
-        """
-
-        node_info = NodeInformation()
-        self.assertFalse(node_info.error)
-
-
-if __name__ == '__main__':
-    unittest.main()

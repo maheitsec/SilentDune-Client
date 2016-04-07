@@ -29,7 +29,7 @@ import utils.configuration as configuration
 from utils.configuration import ClientConfiguration
 from utils.console import ConsoleBase
 from utils.log import setup_logging
-from utils.node_info import NodeInformation
+from utils.node_info import NodeInformation, get_active_firewall
 from modules import __load_modules__
 
 try:
@@ -51,11 +51,54 @@ class Installer(ConsoleBase):
 
     node_info = None
 
-    def __init__(self, args, modules):
+    previous_firewall_service = None
+
+    def __init__(self, args, modules, node_info):
 
         self.__modules = modules
         self.args = args
-        self.node_info = NodeInformation()
+        self.node_info = node_info
+
+    def firewall_check(self):
+        """
+
+        :return:
+        """
+
+        self.cwrite('Checking for running firewall service...  ')
+
+        service = get_active_firewall()
+
+        if not service:
+            self.cwriteline('[Error]', 'Could not detect running firewall instance.')
+            return False
+
+        if service == 'sdc':
+            self.cwriteline('[Error]', 'Silent Dune firewall service is already running, please uninstall first.')
+            return False
+
+        self.cwriteline('[OK]', 'Detected running {0} instance.'.format(service))
+
+        self.previous_firewall_service = service
+
+        # check to see that we detected a running firewall service
+        if not self.previous_firewall_service:
+
+            # We were unable to detect the running firewall service.  Its a bad thing, but maybe
+            # we should let the user decided if they want to continue.
+
+            _logger.warning(_("Unable to detect the running firewall service.  You may continue, but "  # noqa
+                              "unexpected results can occur if more than one firewall service is running. "  # noqa
+                              "This may lead to your machine not being properly secured."))  # noqa
+
+            self.cwrite(_('Do you want to continue with this install? [y/N]:'))  # noqa
+            result = sys.stdin.read(1)
+
+            if result not in {'y', 'Y'}:
+                _logger.debug('User aborting installation process.')
+                return False
+
+        return True
 
     def write_config(self):
         """
@@ -64,17 +107,6 @@ class Installer(ConsoleBase):
 
         # Create the configuration object.
         cc = ClientConfiguration()
-
-        # Set configuration items based on what we know now.
-        cc.set('settings', 'pidfile', self.node_info.pid_file)
-        cc.set('settings', 'logfile', self.node_info.log_file)
-
-        if self.node_info.ufw:
-            cc.pfws = 'ufw'
-        elif self.node_info.firewalld:
-            cc.pfws = 'firewalld'
-        elif self.node_info.iptables:
-            cc.pfws = 'iptables'
 
         # Loop through the modules and have them set their configuration information.
         for mod in self.__modules:
@@ -117,6 +149,9 @@ class Installer(ConsoleBase):
         # See if we haven't determined the configuration root directory.
         if not self.node_info.config_root:
             _logger.error('Error determining the configuration root directory.')
+            return False
+
+        if not self.firewall_check():
             return False
 
         #
@@ -193,12 +228,14 @@ def run():
             parser.print_help()
             exit(1)
 
+    node_info = NodeInformation()
+
     # Dump debug information
     if args.debug:
-        NodeInformation().node_info_dump(args)
+        node_info.node_info_dump(args)
 
     # Instantiate the installer object
-    i = Installer(args, module_list)
+    i = Installer(args, module_list, node_info)
 
     # Begin the install process.
     if not i.start_install():

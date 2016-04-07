@@ -26,9 +26,8 @@ import string
 import sys
 from subprocess import check_output, CalledProcessError
 
-
 from utils.console import ConsoleBase
-from utils.misc import which, determine_config_root
+from utils.misc import which, determine_config_root, get_active_firewall
 
 _logger = logging.getLogger('sd-client')
 
@@ -60,9 +59,7 @@ class NodeInformation(ConsoleBase):
     sysv_installed = False
 
     # Previous firewall service
-    ufw = False
-    firewalld = False
-    iptables = False
+    previous_firewall_service = None
 
     # Firewall_platform - Currently only iptables is supported.
     firewall_platform = 'iptables'
@@ -82,7 +79,7 @@ class NodeInformation(ConsoleBase):
                 self.error = True
                 return
 
-            # Change the default path for pid and log file to home directory.
+            # Change the default path for pid and log file to config_root.
             self.pid_file = os.path.join(self.config_root, 'sdc.pid')
             self.log_file = os.path.join(self.config_root, 'sdc.log')
 
@@ -129,7 +126,7 @@ class NodeInformation(ConsoleBase):
             _logger.critical('Unable to determine which services are running on this machine.')
             return False
 
-        if self.iptables is None or self.iptables_save is None or self.iptables_restore is None:
+        if self.iptables_exec is None or self.iptables_save is None or self.iptables_restore is None:
             _logger.critical('Unable to find iptables executables.')
             return False
 
@@ -167,87 +164,15 @@ class NodeInformation(ConsoleBase):
 
     def _firewall_check(self):
         """
-        Determine which firewall service is running on this system.
+        Get the currently running firewall service
         """
+        self.previous_firewall_service = get_active_firewall()
 
-        self.cwrite('Checking for firewall service...  ')
+        if not self.previous_firewall_service:
+            _logger.error('Unable to detect running firewall instance.')
+            return False
 
-        pgrep = self.pgrep
-
-        # Check to see if ufw is running
-        if self.ups_installed:
-
-            prog = which('ufw')
-
-            if prog:
-
-                try:
-                    pid = check_output('{0} -f "{1}"'.format(pgrep, prog), shell=True)[:]
-
-                    if pid and len(pid) > 1:
-                        self.ufw = True
-                        self.cwriteline('[OK]', 'Detected running ufw (uncomplicated firewall) instance.')
-
-                except CalledProcessError:
-                    pass
-
-            else:
-                _logger.debug('ufw executable not found.')
-
-        # Check to see if firewalld is running
-        if self.sysd_installed:
-
-            prog = which('firewalld')
-
-            if prog:
-
-                try:
-                    pid = check_output('{0} -f "{1}"'.format(pgrep, prog), shell=True)[:]
-
-                    if pid and len(pid) > 1:
-                        self.firewalld = True
-                        self.cwriteline('[OK]', 'Detected running firewalld instance.')
-
-                except CalledProcessError:
-                    pass
-
-            else:
-                _logger.debug('firewalld executable not found.')
-
-        # The iptables service could be running regardless of the init system used on this machine.
-        # Test for a running iptables instance.
-        if not self.ufw and not self.firewalld:
-
-            # Check the iptables service status
-            # TODO: Need a different check for each init system
-            try:
-                output = check_output('service iptables status', shell=True)[:]
-
-                if output and len(output) > 1 and \
-                                'unrecognized service' not in output and 'Table:' in output:
-                    self.iptables = True
-                    self.cwriteline('[OK]', 'Detected running iptables instance.')
-
-            except CalledProcessError:
-                pass
-
-        # check to see that we detected a running firewall service
-        if not self.ufw and not self.firewalld and not self.iptables:
-
-            # We were unable to detect the running firewall service.  Its a bad thing, but maybe
-            # we should let the user decided if they want to continue.
-
-            _logger.warning(_("Unable to detect the running firewall service.  You may continue, but "  # noqa
-                              "unexpected results can occur if more than one firewall service is running. "  # noqa
-                              "This may lead to your machine not being properly secured."))  # noqa
-
-            self.cwrite(_('Do you want to continue with this install? [y/N]:'))  # noqa
-            result = sys.stdin.read(1)
-
-            if result not in {'y', 'Y'}:
-                _logger.debug('User aborting installation process.')
-                return False
-
+        _logger.debug('Detected running firewall "{0}".'.format(self.previous_firewall_service))
         return True
 
     def _get_machine_id(self):
