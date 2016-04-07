@@ -70,37 +70,60 @@ class NodeInformation(ConsoleBase):
     error = False
 
     def __init__(self):
+        """
+        Gather all the information we need about this node.
+        """
 
-        # Gather information about this node.
-        self.config_root = determine_config_root()
-        if not self.config_root:
-            error = True
-            return
+        try:
 
-        # Change the default path for pid and log file to home directory.
-        self.pid_file = os.path.join(self.config_root, 'sdc.pid')
-        self.log_file = os.path.join(self.config_root, 'sdc.log')
+            # Gather information about this node.
+            self.config_root = determine_config_root()
+            if not self.config_root:
+                self.error = True
+                return
 
-        if not self._check_for_external_progs():
+            # Change the default path for pid and log file to home directory.
+            self.pid_file = os.path.join(self.config_root, 'sdc.pid')
+            self.log_file = os.path.join(self.config_root, 'sdc.log')
+
+            if not self._check_for_external_progs():
+                self.error = True
+            elif not self._init_system_check():
+                self.error = True
+            elif not self._firewall_check():
+                self.error = True
+            elif not self._get_machine_id():
+                self.error = True
+
+        except:
             self.error = True
-        elif not self._init_system_check():
+
+    def _which_wrapper(self, name):
+        """
+        If any program is not found, set an error.
+        :param name: Program name
+        :return: Program path or None
+        """
+
+        p = which(name)
+        if not p:
+            _logger.debug('Failed to find program path for "{0}"'.format(name))
             self.error = True
-        elif not self._firewall_check():
-            self.error = True
-        elif not self._get_machine_id():
-            self.error = True
+
+        return p
 
     def _check_for_external_progs(self):
         """
         Find external programs used by this client.
         """
 
-        self.ps = which('ps')
-        self.pgrep = which('pgrep')
-        self.sed = which('sed')
-        self.iptables_exec = which('iptables')
-        self.iptables_save = which('iptables-save')
-        self.iptables_restore = which('iptables-restore')
+        # Use _which_wrapper to set an error for any missing programs.
+        self.ps = self._which_wrapper('ps')
+        self.pgrep = self._which_wrapper('pgrep')
+        self.sed = self._which_wrapper('sed')
+        self.iptables_exec = self._which_wrapper('iptables')
+        self.iptables_save = self._which_wrapper('iptables-save')
+        self.iptables_restore = self._which_wrapper('iptables-restore')
 
         if self.ps is None or self.pgrep is None:
             _logger.critical('Unable to determine which services are running on this machine.')

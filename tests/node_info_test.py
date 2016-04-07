@@ -20,7 +20,7 @@
 
 import unittest
 
-from . utils.node_info import NodeInformation
+from utils.node_info import NodeInformation
 
 # import pytest
 
@@ -28,6 +28,10 @@ from . utils.node_info import NodeInformation
 class TestNodeInformation(unittest.TestCase):
 
     def test_node_info(self):
+        """
+        Test that the NodeInformation init process doesn't fail.
+        :return:
+        """
 
         node_info = NodeInformation()
         self.assertFalse(node_info.error)

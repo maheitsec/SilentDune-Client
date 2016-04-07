@@ -65,6 +65,17 @@ class Installer(ConsoleBase):
         # Create the configuration object.
         cc = ClientConfiguration()
 
+        # Set configuration items based on what we know now.
+        cc.set('settings', 'pidfile', self.node_info.pid_file)
+        cc.set('settings', 'logfile', self.node_info.log_file)
+
+        if self.node_info.ufw:
+            cc.pfws = 'ufw'
+        elif self.node_info.firewalld:
+            cc.pfws = 'firewalld'
+        elif self.node_info.iptables:
+            cc.pfws = 'iptables'
+
         # Loop through the modules and have them set their configuration information.
         for mod in self.__modules:
             result = mod.prepare_config(cc)
