@@ -20,7 +20,9 @@
 
 import logging
 import os
+import platform
 import socket
+import sys
 from subprocess import check_output, CalledProcessError
 
 _logger = logging.getLogger('sd-client')
@@ -47,6 +49,23 @@ def which(program):
                 return exe_file
 
     return None
+
+
+def node_info_dump(args):
+    """
+    Output information about this machine.
+    """
+    # Basic system detections
+    _logger.debug('System = {0}'.format(platform.system()))
+
+    # Current distribution
+    _logger.debug('Distribution = {0}'.format(platform.dist()[0]))
+    _logger.debug('Distribution Version = {0}'.format(platform.dist()[1]))
+
+    # Python version
+    _logger.debug('Python Version: {0}'.format(sys.version.replace('\n', '')))
+
+    _logger.debug(args)
 
 
 def determine_config_root():
@@ -97,63 +116,67 @@ def determine_config_root():
         _logger.critical('Unable to determine a writable configuration path for this node.')
         return None
 
-    if root_failed and not home_failed:
-        _logger.warning('Not running as root, setting configuration path to "{0}"'.format(config_root))
-        _logger.warning('Since we are not running as root, system firewall settings will not be changed.')
-
-        _logger.debug('Configuration root set to "{0}"'.format(config_root))
-
     return config_root
+
+
+def get_init_system():
+    """
+    Return the active init system on this node.
+    :return:
+    """
+    # See if this system is an upstart setup.
+    if which('initctl') is not None and os.path.isfile(which('initctl')):
+        return 'upstart'
+
+    # See if this system is a systemd setup.
+    if which('systemctl') is not None and os.path.exists('/run/systemd/system'):
+        return 'systemd'
+
+    # See if this system is a sysvinit setup, must be after upstart and systemd detection.
+    if which('service') is not None:
+        return 'sysv'
+
+    return None
+
+
+def is_process_running(name):
+    """
+    Determine if the specified process is running.
+    :param name: Name of service.
+    :return: True if service is running, False if not found.
+    """
+    pgrep = which('pgrep')
+    prog = which(name)
+
+    if not prog:
+        return False
+
+    try:
+        pid = check_output('{0} -f "{1}"'.format(pgrep, prog), shell=True)[:]
+        if pid:
+            return True
+    except CalledProcessError:
+        pass
+
+    return False
+
 
 def get_active_firewall():
     """
     Determine which firewall service is running on this system.
+    :return: Firewall service name
     """
-    pgrep = which('pgrep')
+    if is_process_running('ufw'):
+        return 'ufw'
 
-    # Check to see if ufw is running
-    prog = which('ufw')
-    if prog:
+    if is_process_running('firewalld'):
+        return 'firewalld'
 
-        try:
-            pid = check_output('{0} -f "{1}"'.format(pgrep, prog), shell=True)[:]
-            if pid:
-                return prog
-        except CalledProcessError:
-            pass
+    if is_process_running('iptables'):
+        return 'iptables'
 
-    # Check to see if firewalld is running
-    prog = which('firewalld')
-    if prog:
-
-        try:
-            pid = check_output('{0} -f "{1}"'.format(pgrep, prog), shell=True)[:]
-            if pid:
-                return prog
-        except CalledProcessError:
-            pass
-
-    # Test for a running iptables instance.
-    prog = which('iptables')
-    if prog:
-
-        try:
-            pid = check_output('{0} -f "{1}"'.format(pgrep, prog), shell=True)[:]
-            if pid:
-                return prog
-        except CalledProcessError:
-            pass
-
-    # Test for a running silent dune client instance.
-    prog = which('sdc-service')
-    if prog:
-
-        try:
-            pid = check_output('{0} -f "{1}"'.format(pgrep, prog), shell=True)[:]
-            if pid:
-                return prog
-        except CalledProcessError:
-            pass
+    if is_process_running('sdc-firewall'):
+        return 'sdc-firewall'
 
     return None
 

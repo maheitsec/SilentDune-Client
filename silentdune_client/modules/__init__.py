@@ -21,6 +21,7 @@
 import logging
 import os
 
+
 from utils.console import ConsoleBase
 from utils.module_loading import import_by_str
 
@@ -119,7 +120,7 @@ class BaseModule(ConsoleBase):
         return True
 
 
-def __load_modules__(dir='modules'):
+def __load_modules__(module_path='modules'):
     """
     Search for modules to load.  Modules must reside under the modules directory and
     have a "module_list" dict defined in the __init__.py file. Each entry in the
@@ -129,7 +130,7 @@ def __load_modules__(dir='modules'):
     module_list = list()
 
     # Loop through the directories looking for modules to import.
-    for root, dirs, files in os.walk(dir, topdown=True):
+    for root, dirs, files in os.walk(module_path, topdown=True):
         # Skip our directory.
         if root == '.':
             continue
@@ -144,8 +145,14 @@ def __load_modules__(dir='modules'):
                 # Attempt to import 'module_list' from __init__.py file.
                 try:
                     ml = import_by_str(mp + '.module_list')
-                except ImportError:
-                    continue
+
+                # TODO: Need to rework module loading to capture to raise code exceptions in both 2.7 and 3.x
+                except ImportError as e:  # TODO: This line does not work in 3.x.
+                    # Check for clean module load errors, otherwise pass the exception raised.
+                    if 'object has no attribute' in e.message or 'does not define a' in e.message:
+                        continue
+                    else:
+                        raise
 
                 for mname, mdict in ml.items():
                     _logger.debug('Found module definition "{0}" in path {1}'.format(mname, mp))

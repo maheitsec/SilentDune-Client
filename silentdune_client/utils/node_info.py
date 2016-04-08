@@ -27,7 +27,7 @@ import sys
 from subprocess import check_output, CalledProcessError
 
 from utils.console import ConsoleBase
-from utils.misc import which, determine_config_root, get_active_firewall
+from utils.misc import which, determine_config_root, get_active_firewall, get_init_system, is_process_running
 
 _logger = logging.getLogger('sd-client')
 
@@ -73,11 +73,21 @@ class NodeInformation(ConsoleBase):
 
         try:
 
+            self.cwrite('Determining configuration root path...')
+
             # Gather information about this node.
             self.config_root = determine_config_root()
             if not self.config_root:
                 self.error = True
+                self.cwriteline('[Error]', 'Unable to determine configuration root.')
                 return
+
+            self.cwriteline('[OK]', 'Configuration root set to "{0}"'.format(self.config_root))
+
+            # Check to see if our configuration path is in a home directory.
+            if os.path.expanduser('~') in self.config_root:
+                _logger.warning('Not running as root, setting configuration path to "{0}"'.format(self.config_root))
+                _logger.warning('Since we are not running as root, system firewall settings will not be changed.')
 
             # Change the default path for pid and log file to config_root.
             self.pid_file = os.path.join(self.config_root, 'sdc.pid')
@@ -139,25 +149,23 @@ class NodeInformation(ConsoleBase):
 
         self.cwrite('Determining Init system...  ')
 
-        # See if this system is an upstart setup.
-        self.ups_installed = which('initctl') is not None and os.path.isfile(which('initctl'))
-
-        # See if this system is a systemd setup.
-        self.sysd_installed = which('systemctl') is not None and os.path.exists('/run/systemd/system')
-
-        # See if this system is a sysvinit setup.
-        self.sysv_installed = which('service') is not None and not self.sysd_installed and not self.ups_installed
+        init = get_init_system()
 
         # If we didn't detect the init system, abort.
-        if not self.ups_installed and not self.sysd_installed and not self.sysv_installed:
-            _logger.critical('Unable to detect init system used on this machine.')
+        if not init:
+            self.cwriteline('[Error]', 'Unable to determine init system on this node.')
             return False
 
-        if self.ups_installed:
+        if init == 'upstart':
+            self.ups_installed = True
             self.cwriteline('[OK]', 'Detected Upstart based init system.')
-        if self.sysd_installed:
+
+        if init == 'systemd':
+            self.sysd_installed = True
             self.cwriteline('[OK]', 'Detected Systemd based init system.')
-        if self.sysv_installed:
+
+        if init == 'sysv':
+            self.sysv_installed = True
             self.cwriteline('[OK]', 'Detected sysvinit based init system.')
 
         return True
@@ -166,13 +174,20 @@ class NodeInformation(ConsoleBase):
         """
         Get the currently running firewall service
         """
+
+        self.cwrite('Checking for running firewall service...  ')
+
         self.previous_firewall_service = get_active_firewall()
 
         if not self.previous_firewall_service:
-            _logger.error('Unable to detect running firewall instance.')
+            self.cwriteline('[Error]', 'Unable to detect running firewall service.')
             return False
 
-        _logger.debug('Detected running firewall "{0}".'.format(self.previous_firewall_service))
+        self.cwriteline('[OK]', 'Detected {0} firewall service.'.format(self.previous_firewall_service))
+
+        if not is_process_running(self.previous_firewall_service):
+            _logger.info('{0} firewall service is not currently running.'.format(self.previous_firewall_service))
+
         return True
 
     def _get_machine_id(self):
@@ -181,7 +196,7 @@ class NodeInformation(ConsoleBase):
         """
 
         m_id = None
-        f = os.path.join(self.config_root , 'machine-id')
+        f = os.path.join(self.config_root, 'machine-id')
 
         _logger.debug('Looking up the machine-id value.')
 
@@ -200,6 +215,7 @@ class NodeInformation(ConsoleBase):
 
         # If we can't find an existing machine id, make one up.
         if not m_id:
+            _logger.debug('Existing machine_id not found.')
             m_id = self._write_machine_id()
 
         self.machine_id = m_id
@@ -218,22 +234,6 @@ class NodeInformation(ConsoleBase):
             h.write(m_id + '\n')
 
         return m_id
-
-    def node_info_dump(self, args):
-        """
-        Output information about this node.
-        """
-        _logger.debug(args)
-
-        # Basic system detections
-        _logger.debug('System = {0}'.format(platform.system()))
-
-        # Current distribution
-        _logger.debug('Distribution = {0}'.format(platform.dist()[0]))
-        _logger.debug('Distribution Version = {0}'.format(platform.dist()[1]))
-
-        # Python version
-        _logger.debug('Python Version: {0}'.format(sys.version.replace('\n', '')))
 
     def _run_service_command(self, cmd, name):
         """

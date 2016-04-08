@@ -207,6 +207,10 @@ class SilentDuneServerModule(BaseModule):
                             '; depending on if the --no-tls option was used during the install.\n'))
         config.set_comment(self._config_section, 'use_tls',
                            _('; Use a secure connection when communicating with the management server.'))  # noqa
+        config.set_comment(self._config_section, 'bundle',
+                           _('; Name of the Bundle assigned to this node. Changing this value has\n'  # noqa
+                             '; no affect. The client always uses the bundle information assigned\n'
+                             '; by the server.'))
 
         return True
 
@@ -345,7 +349,7 @@ class SilentDuneServerModule(BaseModule):
         self.cwriteline('[OK]', 'Successfully downloaded bundle set rules.')
 
         if not node_info.root_user:
-            self.cwriteline('*** Unable to validate rules, not running as privileged user. ***')
+            _logger.warning('Unable to validate rules, not running as privileged user.')
             return True
 
         self.cwrite('Validating bundle set rules...')

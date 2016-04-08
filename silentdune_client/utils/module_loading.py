@@ -20,7 +20,7 @@
 
 import sys
 from importlib import import_module
-from utils import six
+import six
 
 
 def import_by_str(mod):

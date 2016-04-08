@@ -122,7 +122,7 @@ def run():
     gettext.install('sdc_service', **kwargs)
 
     # Setup program arguments.
-    parser = argparse.ArgumentParser(prog='sdc-service')
+    parser = argparse.ArgumentParser(prog='sdc-firewall')
     parser.add_argument('-c', '--config', help=_('Use config file'), default=None, type=str)  # noqa
     parser.add_argument('--debug', help=_('Enable debug output'), default=False, action='store_true')  # noqa
     parser.add_argument('action', choices=('start', 'stop', 'restart'))

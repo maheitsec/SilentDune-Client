@@ -18,13 +18,13 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
-import pytest
+# import pytest
 from utils.node_info import NodeInformation
 
 
 def test_node_info():
     """
-    Test that the NodeInformation init process doesn't fail.
+    Test that the NodeInformation init process succeeds.
     """
     assert not NodeInformation().error
 

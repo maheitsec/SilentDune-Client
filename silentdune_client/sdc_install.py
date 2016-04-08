@@ -26,11 +26,12 @@ import shutil
 import sys
 
 import utils.configuration as configuration
+from modules import __load_modules__
 from utils.configuration import ClientConfiguration
 from utils.console import ConsoleBase
 from utils.log import setup_logging
-from utils.node_info import NodeInformation, get_active_firewall
-from modules import __load_modules__
+from utils.node_info import NodeInformation
+from utils.misc import is_process_running, node_info_dump
 
 try:
     from configparser import ConfigParser
@@ -44,6 +45,7 @@ class Installer(ConsoleBase):
 
     # Modules dictionary list
     __modules = None
+    __config = None
 
     # parser args
     args = None
@@ -58,66 +60,51 @@ class Installer(ConsoleBase):
         self.__modules = modules
         self.args = args
         self.node_info = node_info
-
-    def firewall_check(self):
-        """
-
-        :return:
-        """
-
-        self.cwrite('Checking for running firewall service...  ')
-
-        service = get_active_firewall()
-
-        if not service:
-            self.cwriteline('[Error]', 'Could not detect running firewall instance.')
-            return False
-
-        if service == 'sdc':
-            self.cwriteline('[Error]', 'Silent Dune firewall service is already running, please uninstall first.')
-            return False
-
-        self.cwriteline('[OK]', 'Detected running {0} instance.'.format(service))
-
-        self.previous_firewall_service = service
-
-        # check to see that we detected a running firewall service
-        if not self.previous_firewall_service:
-
-            # We were unable to detect the running firewall service.  Its a bad thing, but maybe
-            # we should let the user decided if they want to continue.
-
-            _logger.warning(_("Unable to detect the running firewall service.  You may continue, but "  # noqa
-                              "unexpected results can occur if more than one firewall service is running. "  # noqa
-                              "This may lead to your machine not being properly secured."))  # noqa
-
-            self.cwrite(_('Do you want to continue with this install? [y/N]:'))  # noqa
-            result = sys.stdin.read(1)
-
-            if result not in {'y', 'Y'}:
-                _logger.debug('User aborting installation process.')
-                return False
-
-        return True
+        self.__config = ClientConfiguration()
 
     def write_config(self):
         """
-        Setup the configuration and write it out.
+        Loop through the modules to set their configuration file items and then save the configuration.
         """
-
-        # Create the configuration object.
-        cc = ClientConfiguration()
-
-        # Loop through the modules and have them set their configuration information.
         for mod in self.__modules:
-            result = mod.prepare_config(cc)
+            result = mod.prepare_config(self.__config)
 
             if not result:
                 _logger.error('Preparing configuration file items failed in module {0}.'.format(mod.get_name()))
                 return False
 
         # Write the configuration file out.
-        return cc.write_config()
+        return self.__config.write_config()
+
+    def disable_previous_firewall(self):
+        """
+        Disable the previous firewall service.
+        :return: True if successful, otherwise False.
+        """
+
+        # Check to see if the previous firewall service is running.
+        if not is_process_running(self.node_info.previous_firewall_service):
+            _logger.info('The current firewall service does not seem to be running.')
+            return True
+
+        self.cwrite('Stopping the current firewall service...')
+
+        # Stop and Disable the previous firewall service.
+        if not self.node_info.stop_service(self.node_info.previous_firewall_service):
+            self.cwriteline('[Error]', 'Unable to stop the current firewall service.')
+            return False
+
+        self.cwriteline('[OK]', 'Successfully stopped the current firewall service.')
+
+        self.cwrite('Disabling the current firewall service...')
+
+        if not self.node_info.disable_service(self.node_info.previous_firewall_service):
+            self.cwriteline('[Error]', 'Unable to disable the current firewall service.')
+            return False
+
+        self.cwriteline('[OK]', 'Successfully disabled the current firewall service.')
+
+        return True
 
     def clean_up(self):
         """
@@ -125,16 +112,30 @@ class Installer(ConsoleBase):
         """
         self.cwrite('Cleaning up...')
 
-        # TODO: Remove client service
+        # The following code can only run if we are running under privileged account.
+        if self.node_info.root_user:
 
-        # TODO: Restore previous firewall service
+            # Remove the directories the daemon process uses.
+            self.__config.delete_directories()
+            _logger.debug('Removed daemon process directories.')
 
-        # if we are running as root, delete the configuration directory
-        if self.node_info.root_user and self.node_info.config_root is not None and os.path.exists(self.node_info.config_root):
-            shutil.rmtree(self.node_info.config_root)
+            # Remove the system user the daemon process uses.
+            self.__config.delete_user()
+            _logger.debug('Removed daemon process system user.')
+
+            # TODO: Remove daemon service init/service config file
+
+            # Check to see if the previous firewall service is running or not
+            if not is_process_running(self.node_info.previous_firewall_service):
+                self.node_info.enable_service(self.node_info.previous_firewall_service)
+
+            # if we are running as root, delete the configuration directory
+            if self.node_info.config_root is not None \
+                    and os.path.exists(self.node_info.config_root) \
+                    and os.path.realpath(self.node_info.config_root) != '/':
+                shutil.rmtree(self.node_info.config_root)
 
         self.cwriteline('[OK]', 'Finished cleaning up.')
-        return
 
     def start_install(self):
         """
@@ -151,7 +152,12 @@ class Installer(ConsoleBase):
             _logger.error('Error determining the configuration root directory.')
             return False
 
-        if not self.firewall_check():
+        # Firewall check
+        if not self.node_info.previous_firewall_service:
+            return False
+
+        if self.node_info.previous_firewall_service == 'sdc-firewall':
+            self.cwriteline('[Error]', 'Silent Dune firewall service is already running, please uninstall first.')
             return False
 
         #
@@ -161,13 +167,24 @@ class Installer(ConsoleBase):
             if not mod.pre_install(self.node_info):
                 return False
 
-        # The following code can only run if we are running under root.
+        # The following code can only run if we are running under privileged account.
         if self.node_info.root_user:
 
-            # TODO: Make sure PID path and Log path are created and set to the proper user, group and mask.
+            # Create the daemon process user
+            if not self.__config.create_user():
+                return False
 
-            pass
+            # Create the directories the daemon process uses.
+            if not self.__config.create_directories():
+                return False
 
+            # Disable the current firewall service
+            if not self.disable_previous_firewall():
+                return False
+
+            # TODO: Install our firewall service
+
+            # TODO: Enable and start our firewall service
 
         #
         # Have each module do their install work now.
@@ -178,10 +195,6 @@ class Installer(ConsoleBase):
 
         if not self.write_config():
             return False
-
-        # TODO: Check firewalld service is running and disable.
-
-        # TODO: Check iptables services are running and disable.
 
         # TODO: Enable SD-Client service and start service
 
@@ -200,8 +213,11 @@ def run():
     #     base_path, tail = os.path.split(base_path)
 
     # Set global debug value and setup application logging.
-    configuration.debug = setup_logging('--debug' in sys.argv)
-    _logger.addHandler(configuration.debug)
+    setup_logging('--debug' in sys.argv)
+
+    # See if we need to dump information about this node.
+    if '--debug' in sys.argv:
+        node_info_dump(sys.argv)
 
     # Setup i18n - Good for 2.x and 3.x python.
     kwargs = {}
@@ -209,8 +225,12 @@ def run():
         kwargs['unicode'] = True
     gettext.install('sdc_install', **kwargs)
 
+    sys.stdout.write('Looking for modules...')
+
     # Get loadable module list
     module_list = __load_modules__()
+
+    print(module_list)
 
     # Setup program arguments.
     parser = argparse.ArgumentParser(prog='sdc-install')  # , formatter_class=argparse.RawTextHelpFormatter)
@@ -229,10 +249,6 @@ def run():
             exit(1)
 
     node_info = NodeInformation()
-
-    # Dump debug information
-    if args.debug:
-        node_info.node_info_dump(args)
 
     # Instantiate the installer object
     i = Installer(args, module_list, node_info)

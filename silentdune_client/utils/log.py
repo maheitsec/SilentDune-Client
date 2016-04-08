@@ -22,6 +22,8 @@ import logging
 import os
 import sys
 
+_logger = logging.getLogger('sd-client')
+
 
 def setup_logging(debug=False):
     """
@@ -45,6 +47,6 @@ def setup_logging(debug=False):
     handler.setFormatter(formatter)
 
     # Set logger handler
-    # _logger.addHandler(handler)
+    _logger.addHandler(handler)
 
     return handler
