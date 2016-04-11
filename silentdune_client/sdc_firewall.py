@@ -28,7 +28,7 @@ import sys
 import time
 
 from utils.log import setup_logging
-from utils.node_info import node_info_dump
+from utils.misc import node_info_dump
 
 from utils.configuration import ClientConfiguration
 from utils.daemon import Daemon
@@ -44,11 +44,11 @@ def run():
         _args = None
         _config = None
         stopProcessing = False
+        reload = False
 
         def __init__(self, *args, **kwargs):
 
             self._args = kwargs.pop('args', None)
-            self._config = kwargs.pop('config', None)
 
             super(SDCDaemon, self).__init__(*args, **kwargs)
 
@@ -75,33 +75,45 @@ def run():
 
         def run(self):
 
-            _logger.info('Beginning daemon startup.')
-
-            _logger.debug('Setting SIGTERM handler.')
+            _logger.debug('Setting signal handlers.')
             # Set SIGTERM signal Handler
             signal.signal(signal.SIGTERM, signal_term_handler)
+            signal.signal(signal.SIGHUP, signal_hup_handler)
 
-            _logger.debug('Initializing processing queue child.')
-            qu = multiprocessing.Queue()
-            child = multiprocessing.Process(target=self.process_tasks, args=(qu,))
-            child.start()
+            _logger.info('Beginning firewall startup.')
 
-            # loop until we get a signal
-            _logger.debug('Starting main processing loop.')
-            while not self.stopProcessing and child.is_alive():
+            while True:
 
-                time.sleep(2)
-                _logger.info('Run loop.')
+                # Read the local configuration file.
+                self._config = ClientConfiguration(self._args.config).read_config()
 
-            if child.is_alive():
-                _logger.debug('Waiting for processing queue child process to finish.')
-                qu.put(None)
+                # TODO: Load client modules here.
 
-            qu.close()
-            qu.join_thread()
-            child.join()
+                _logger.debug('Initializing processing queue child.')
+                qu = multiprocessing.Queue()
+                child = multiprocessing.Process(target=self.process_tasks, args=(qu,))
+                child.start()
 
-            _logger.info('Daemon shutdown complete.')
+                # loop until we get a signal
+                _logger.debug('Starting main processing loop.')
+                while not self.stopProcessing and child.is_alive():
+
+                    time.sleep(2)
+                    _logger.info('Run loop.')
+
+                if child.is_alive():
+                    _logger.debug('Waiting for processing queue child process to finish.')
+                    qu.put(None)
+
+                qu.close()
+                qu.join_thread()
+                child.join()
+
+                # If we are not reloading, just shutdown.
+                if not self.reload:
+                    break
+
+            _logger.info('Firewall shutdown complete.')
 
             # exit process
             sys.exit(0)
@@ -109,11 +121,14 @@ def run():
     def signal_term_handler(signal, frame):
 
         if not _daemon.stopProcessing:
-            _logger.warning("Daemon: Got SIGTERM, quitting.")
+            _logger.warning("Firewall: Got SIGTERM, quitting.")
         _daemon.stopProcessing = True
 
-    # Setup application logging
-    _logger.addHandler(setup_logging('--debug' in sys.argv))
+    def signal_hup_handler(signal, frame):
+
+        if not _daemon.reload:
+            _logger.warning("Firewall: Got SIGHUP, reloading.")
+        _daemon.reload = True
 
     # Setup i18n - Good for 2.x and 3.x python.
     kwargs = {}
@@ -125,9 +140,12 @@ def run():
     parser = argparse.ArgumentParser(prog='sdc-firewall')
     parser.add_argument('-c', '--config', help=_('Use config file'), default=None, type=str)  # noqa
     parser.add_argument('--debug', help=_('Enable debug output'), default=False, action='store_true')  # noqa
-    parser.add_argument('action', choices=('start', 'stop', 'restart'))
+    parser.add_argument('--nodaemon', help=_('Do not daemonize process'), default=False, action='store_true')  # noqa
+    parser.add_argument('action', choices=('start', 'stop', 'restart'), default='')
 
     args = parser.parse_args()
+
+    _logger.addHandler(setup_logging(args.debug, args.config))
 
     # Dump debug information
     if args.debug:
@@ -140,29 +158,33 @@ def run():
         _logger.error('Invalid configuration file information, aborting.')
         sys.exit(1)
 
-    # Setup daemon object
-    _daemon = SDCDaemon(
-        os.path.split(config.get('settings', 'pidfile'))[0],
-        '0o700',
-        os.path.split(config.get('settings', 'pidfile'))[1],
-        config.get('settings', 'user'),
-        config.get('settings', 'group'),
-        '/dev/null',
-        config.get('settings', 'logfile'),
-        '/dev/null',
-        args=args,
-        config=config
-    )
+    # Do not fork the daemon process, run in foreground. For systemd service.
+    if args.nodaemon:
+        _daemon = SDCDaemon(args=args)
+        _daemon.run()
+    else:
+        # Setup daemon object
+        _daemon = SDCDaemon(
+            os.path.split(config.get('settings', 'pidfile'))[0],
+            '0o700',
+            os.path.split(config.get('settings', 'pidfile'))[1],
+            config.get('settings', 'user'),
+            config.get('settings', 'group'),
+            '/dev/null',
+            config.get('settings', 'logfile'),
+            '/dev/null',
+            args=args
+        )
 
-    if args.action == 'start':
-        _logger.debug('Starting daemon.')
-        _daemon.start()
-    elif args.action == 'stop':
-        _logger.debug('Stopping daemon.')
-        _daemon.stop()
-    elif args.action == 'restart':
-        _logger.debug('Restarting daemon.')
-        _daemon.restart()
+        if args.action == 'start':
+            _logger.debug('Starting daemon.')
+            _daemon.start()
+        elif args.action == 'stop':
+            _logger.debug('Stopping daemon.')
+            _daemon.stop()
+        elif args.action == 'restart':
+            _logger.debug('Restarting daemon.')
+            _daemon.restart()
 
     return 0
 

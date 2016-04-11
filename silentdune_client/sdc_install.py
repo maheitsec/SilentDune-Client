@@ -230,8 +230,6 @@ def run():
     # Get loadable module list
     module_list = __load_modules__()
 
-    print(module_list)
-
     # Setup program arguments.
     parser = argparse.ArgumentParser(prog='sdc-install')  # , formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument(_('--debug'), help=_('Enable debug output'), default=False, action='store_true')  # noqa

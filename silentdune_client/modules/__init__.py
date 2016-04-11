@@ -147,8 +147,8 @@ def __load_modules__(module_path='modules'):
                 try:
                     ml = import_by_str(mp + '.module_list')
 
-                # If we get an Exception check to see if the module loaded but there was no
-                # module definition found, otherwise just reraise the last Exception for debugging.
+                # If we get an Exception check to see if the python module loaded but there was no
+                # client module definition found, otherwise just reraise the last Exception for debugging.
                 except ModuleLoadError:
                     # Looks like a clean import error. IE: __init__.py is not a real module.
                     continue
