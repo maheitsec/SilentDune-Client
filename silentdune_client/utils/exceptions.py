@@ -18,6 +18,9 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
+class ModuleLoadError(Exception):
+    """There was an Exception thrown while trying to load the module"""
+    pass
 
 class ImproperlyConfigured(Exception):
     """ Silent Dune Client is improperly configured somehow """

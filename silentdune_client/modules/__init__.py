@@ -24,6 +24,7 @@ import os
 
 from utils.console import ConsoleBase
 from utils.module_loading import import_by_str
+from utils.exceptions import ModuleLoadError
 
 _logger = logging.getLogger('sd-client')
 
@@ -146,13 +147,14 @@ def __load_modules__(module_path='modules'):
                 try:
                     ml = import_by_str(mp + '.module_list')
 
-                # TODO: Need to rework module loading to capture to raise code exceptions in both 2.7 and 3.x
-                except ImportError as e:  # TODO: This line does not work in 3.x.
-                    # Check for clean module load errors, otherwise pass the exception raised.
-                    if 'object has no attribute' in e.message or 'does not define a' in e.message:
-                        continue
-                    else:
-                        raise
+                # If we get an Exception check to see if the module loaded but there was no
+                # module definition found, otherwise just reraise the last Exception for debugging.
+                except ModuleLoadError:
+                    # Looks like a clean import error. IE: __init__.py is not a real module.
+                    continue
+                except:
+                    # Found a module to load, but it threw an Exception. Just pass the Exception up.
+                    raise
 
                 for mname, mdict in ml.items():
                     _logger.debug('Found module definition "{0}" in path {1}'.format(mname, mp))

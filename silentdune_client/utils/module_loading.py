@@ -18,9 +18,9 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
-import sys
 from importlib import import_module
-import six
+
+from utils.exceptions import ModuleLoadError
 
 
 def import_by_str(mod):
@@ -29,16 +29,20 @@ def import_by_str(mod):
     last name in the path. Raise ImportError if the import failed.
     """
 
-    try:
-        mpath, cname = mod.rsplit('.', 1)
-    except ValueError:
-        msg = '{0} dosen\'t look like a module path.'.format(mod)
-        six.reraise(ImportError, ImportError(msg), sys.exc_info()[2])
-
+    # If these throw Exceptions, just let them bubble to the parent.
+    mpath, cname = mod.rsplit('.', 1)
     module = import_module(mpath)
 
     try:
         return getattr(module, cname)
-    except AttributeError:
-        msg = 'Module "{0}" does not define a "{1}" attribute/class'.format(mpath, cname)
-        six.reraise(ImportError, ImportError(msg), sys.exc_info()[2])
+    except AttributeError as e:
+        msg = str(e)
+
+        # If this is a "'module' object has no attribute 'module_list'" message raise an ModuleLoadError,
+        # otherwise reraise the AttributeError Exception so we can get the cause and stacktrace of the
+        # Exception.
+        if "no attribute 'module_list'" in msg:
+            raise ModuleLoadError('Not a loadable module')
+        else:
+            raise
+

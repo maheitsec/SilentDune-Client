@@ -24,8 +24,6 @@ import logging
 import os
 import pwd
 import shutil
-import six
-import sys
 from collections import OrderedDict
 from subprocess import check_output, CalledProcessError
 
@@ -95,7 +93,7 @@ class ClientConfiguration(object):
         """
         if not section:
             msg = 'Invalid configuration section name ({0}).'.format(section)
-            six.reraise(ValueError, ValueError(msg), sys.exc_info()[2])
+            raise ValueError(msg)
 
         if section not in self._config:
             self._config[section] = OrderedDict()
@@ -111,11 +109,11 @@ class ClientConfiguration(object):
         """
         if not section or section not in self._config:
             msg = 'Invalid configuration section name ({0}).'.format(section)
-            six.reraise(ValueError, ValueError(msg), sys.exc_info()[2])
+            raise ValueError(msg)
 
         if not key or key not in self._config[section]:
             msg = 'Invalid configuration key name ({0}).'.format(key)
-            six.reraise(ValueError, ValueError(msg), sys.exc_info()[2])
+            raise ValueError(msg)
 
         return self._config[section][key]
 
@@ -126,7 +124,7 @@ class ClientConfiguration(object):
 
         if not section:
             msg = 'Invalid configuration section name ({0}).'.format(section)
-            six.reraise(ValueError, ValueError(msg), sys.exc_info()[2])
+            raise ValueError(msg)
 
         if 'comments' not in self._config[section]:
             self._config[section]['comments'] = OrderedDict()
