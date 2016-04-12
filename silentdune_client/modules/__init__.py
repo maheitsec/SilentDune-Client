@@ -22,9 +22,9 @@ import logging
 import os
 
 
-from utils.console import ConsoleBase
-from utils.module_loading import import_by_str
-from utils.exceptions import ModuleLoadError
+from silentdune_client.utils.console import ConsoleBase
+from silentdune_client.utils.module_loading import import_by_str
+from silentdune_client.utils.exceptions import ModuleLoadError
 
 _logger = logging.getLogger('sd-client')
 
@@ -121,7 +121,7 @@ class BaseModule(ConsoleBase):
         return True
 
 
-def __load_modules__(module_path='modules'):
+def __load_modules__(base_path=None, module_path='silentdune_client/modules'):
     """
     Search for modules to load.  Modules must reside under the modules directory and
     have a "module_list" dict defined in the __init__.py file. Each entry in the
@@ -131,7 +131,7 @@ def __load_modules__(module_path='modules'):
     module_list = list()
 
     # Loop through the directories looking for modules to import.
-    for root, dirs, files in os.walk(module_path, topdown=True):
+    for root, dirs, files in os.walk(os.path.join(base_path, module_path), topdown=True):
         # Skip our directory.
         if root == '.':
             continue
@@ -140,8 +140,8 @@ def __load_modules__(module_path='modules'):
         for name in files:
             if name == '__init__.py':
 
-                # Convert path to dotted path.
-                mp = root.replace('./', '').replace('/', '.')
+                # Remove base_path and convert to dotted path.
+                mp = root.replace(base_path + '/', '').replace('./', '').replace('/', '.')
 
                 # Attempt to import 'module_list' from __init__.py file.
                 try:

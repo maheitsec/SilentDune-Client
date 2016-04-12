@@ -27,11 +27,11 @@ import signal
 import sys
 import time
 
-from utils.log import setup_logging
-from utils.misc import node_info_dump
+from silentdune_client.utils.log import setup_logging
+from silentdune_client.utils.misc import node_info_dump
 
-from utils.configuration import ClientConfiguration
-from utils.daemon import Daemon
+from silentdune_client.utils.configuration import ClientConfiguration
+from silentdune_client.utils.daemon import Daemon
 
 _logger = logging.getLogger('sd-client')
 
@@ -81,6 +81,11 @@ def run():
             signal.signal(signal.SIGHUP, signal_hup_handler)
 
             _logger.info('Beginning firewall startup.')
+
+            # Get the path where this file is located.
+            app_path = os.path.split(os.path.realpath(__file__))[0]
+            # Get our package path and package name
+            base_path, package_name = os.path.split(app_path)
 
             while True:
 

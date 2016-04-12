@@ -27,12 +27,12 @@ import sys
 
 from subprocess import check_output, CalledProcessError
 
-from modules import __load_modules__
-from utils.configuration import ClientConfiguration
-from utils.console import ConsoleBase
-from utils.log import setup_logging
-from utils.node_info import NodeInformation
-from utils.misc import is_process_running, node_info_dump, which
+from silentdune_client.modules import __load_modules__
+from silentdune_client.utils.configuration import ClientConfiguration
+from silentdune_client.utils.console import ConsoleBase
+from silentdune_client.utils.log import setup_logging
+from silentdune_client.utils.node_info import NodeInformation
+from silentdune_client.utils.misc import is_process_running, node_info_dump, which
 
 try:
     from configparser import ConfigParser
@@ -323,12 +323,14 @@ def run():
     if '--debug' in sys.argv:
         node_info_dump(sys.argv)
 
-    # Figure out our root path
-    base_path = os.path.split(os.path.realpath(__file__))[0]
+    # Get the path where this file is located.
+    app_path = os.path.split(os.path.realpath(__file__))[0]
+    # Get our package path and package name
+    base_path, package_name = os.path.split(app_path)
 
     # Check and make sure we can find the init scripts.
-    if not os.path.exists(os.path.join(base_path, 'init/systemd.service')) or \
-            not os.path.exists(os.path.join(base_path, 'init/sysv.service')):
+    if not os.path.exists(os.path.join(app_path, 'init/systemd.service')) or \
+            not os.path.exists(os.path.join(app_path, 'init/sysv.service')):
         print('sdc-install: error: Unable to locate client init scripts, unable to install')
         sys.exit(1)
 
@@ -341,7 +343,7 @@ def run():
     print('Looking for modules...')
 
     # Get loadable module list
-    module_list = __load_modules__()
+    module_list = __load_modules__(base_path=base_path)
 
     # Setup program arguments.
     parser = argparse.ArgumentParser(prog='sdc-install')  # , formatter_class=argparse.RawTextHelpFormatter)

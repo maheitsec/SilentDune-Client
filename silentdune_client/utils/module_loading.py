@@ -20,7 +20,7 @@
 
 from importlib import import_module
 
-from utils.exceptions import ModuleLoadError
+from silentdune_client.utils.exceptions import ModuleLoadError
 
 
 def import_by_str(mod):

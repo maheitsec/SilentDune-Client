@@ -20,19 +20,17 @@
 
 import logging
 import os
+import pkg_resources
 import platform
 import requests
 import socket
 import sys
 from subprocess import check_output, CalledProcessError
 
-from modules.comm.sd_server.json_models import Node, NodeBundle
-from modules.comm.sd_server.connection import SDSConnection
-
-import pkg_resources
-
-from modules import BaseModule
-from utils.misc import is_valid_ipv4_address, is_valid_ipv6_address
+from silentdune_client.modules.comm.sd_server.json_models import Node, NodeBundle
+from silentdune_client.modules.comm.sd_server.connection import SDSConnection
+from silentdune_client.modules import BaseModule
+from silentdune_client.utils.misc import is_valid_ipv4_address, is_valid_ipv6_address
 
 _logger = logging.getLogger('sd-client')
 

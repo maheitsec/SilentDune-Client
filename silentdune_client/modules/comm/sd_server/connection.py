@@ -23,8 +23,9 @@ import os
 import requests
 import socket
 
-from utils.console import ConsoleBase
-from modules.comm.sd_server.json_models import Node, NodeBundle, IPMachineSubset, Bundle, IPRulesFileWriter
+from silentdune_client.utils.console import ConsoleBase
+from silentdune_client.modules.comm.sd_server.json_models import \
+    Node, NodeBundle, IPMachineSubset, Bundle, IPRulesFileWriter
 
 _logger = logging.getLogger('sd-client')
 

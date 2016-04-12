@@ -26,8 +26,9 @@ import string
 import sys
 from subprocess import check_output, CalledProcessError
 
-from utils.console import ConsoleBase
-from utils.misc import which, determine_config_root, get_active_firewall, get_init_system, is_process_running
+from silentdune_client.utils.console import ConsoleBase
+from silentdune_client.utils.misc import \
+    which, determine_config_root, get_active_firewall, get_init_system, is_process_running
 
 _logger = logging.getLogger('sd-client')
 
