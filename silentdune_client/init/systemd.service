@@ -8,8 +8,10 @@ After=polkit.service
 Conflicts=iptables.service ip6tables.service ebtables.service ipset.service firewalld.service ufw.service
 
 [Service]
-ExecStart=/usr/sbin/sdc-firewall nodaemon
-ExecReload=/bin/kill -HUP $MAINPID
+User=silentdune
+Group=silentdune
+ExecStart=%%SDC-FIREWALL%% --nodaemon start
+ExecReload=%%KILL%% -HUP $MAINPID
 StandardOutput=null
 StandardError=null
 

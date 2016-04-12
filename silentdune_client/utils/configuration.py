@@ -87,6 +87,27 @@ class ClientConfiguration(object):
                            '; compromise security on this system if the Silent Dune client is\n'
                            '; uninstalled.\n'))
 
+    def delete(self, section, key):
+        """
+        Delete a configuration key from the section specified.
+        :param section: Configuration section name
+        :param key:
+        :return:
+        """
+
+        if not section or section not in self._config:
+            msg = 'Invalid configuration section name ({0}).'.format(section)
+            raise ValueError(msg)
+
+        if not key or key not in self._config[section]:
+            msg = 'Invalid configuration key name ({0}).'.format(key)
+            raise ValueError(msg)
+
+        del self._config[section][key]
+
+        return True
+
+
     def set(self, section, key, val):
         """
         Set a configuration value in the section specified.
@@ -201,7 +222,7 @@ class ClientConfiguration(object):
 
         return True
 
-    def create_user(self):
+    def create_service_user(self):
         """
         Create the system user and group used by the daemon process.
         :return:
@@ -276,14 +297,21 @@ class ClientConfiguration(object):
         :return:
         """
 
+        pidfile = None
+
         try:
             user = self.get(self._config_section, 'user')
             group = self.get(self._config_section, 'group')
-            pidfile = self.get(self._config_section, 'pidfile')
             logfile = self.get(self._config_section, 'logfile')
         except ValueError:
             _logger.error('Unable to retrieve configuration values.')
             return False
+
+        # The pidfile configuration item might not exist.
+        try:
+            pidfile = self.get(self._config_section, 'pidfile')
+        except ValueError:
+            pass
 
         try:
             # Get information about the daemon process user and group.
@@ -294,23 +322,22 @@ class ClientConfiguration(object):
             return False
 
         try:
-            pidpath = os.path.split(pidfile)[0]
-            if not os.path.exists(pidpath):
-                os.makedirs(pidpath, '770')
-
-            logpath = os.path.split(logfile)[0]
-            if not os.path.exists(logpath):
-                os.makedirs(logpath, '770')
+            if pidfile:
+                pidpath = os.path.split(pidfile)[0]
+                if not os.path.exists(pidpath):
+                    os.makedirs(pidpath, '770')
+                os.chown(pidpath, userinfo.pw_uid, groupinfo.gr_gid)
         except:
-            _logger.error('Unable to create PID file or LOG file path.')
+            _logger.error('Unable to create PID file path.')
             return False
 
         try:
-            # Make the procbase directory and pid file are owned by our process user
-            os.chown(pidpath, userinfo.pw_uid, groupinfo.gr_gid)
+            logpath = os.path.split(logfile)[0]
+            if not os.path.exists(logpath):
+                os.makedirs(logpath, '770')
             os.chown(logpath, userinfo.pw_uid, groupinfo.gr_gid)
         except:
-            _logger.error('Unable to set ownership or permissions on PID file or LOG file path.')
+            _logger.error('Unable to create LOG file path.')
             return False
 
         return True
@@ -322,13 +349,19 @@ class ClientConfiguration(object):
         """
 
         result = True
+        pidfile = None
 
         try:
-            pidfile = self.get(self._config_section, 'pidfile')
             logfile = self.get(self._config_section, 'logfile')
         except ValueError:
             _logger.error('Unable to retrieve directory configuration values.')
             return False
+
+        # The pidfile configuration item might not exist.
+        try:
+            pidfile = self.get(self._config_section, 'pidfile')
+        except ValueError:
+            pass
 
         # Remove log file directory
         logpath = os.path.split(logfile)[0]
@@ -340,12 +373,13 @@ class ClientConfiguration(object):
                 result = False
 
         # Remove PID file directory
-        pidpath = os.path.split(pidfile)[0]
-        if os.path.exists(pidpath) and os.path.realpath(pidpath) != '/':
-            try:
-                shutil.rmtree(pidpath)
-            except:
-                _logger.error('Failed to delete logfile directory ({0}).'.format(pidpath))
-                result = False
+        if pidfile:
+            pidpath = os.path.split(pidfile)[0]
+            if os.path.exists(pidpath) and os.path.realpath(pidpath) != '/':
+                try:
+                    shutil.rmtree(pidpath)
+                except:
+                    _logger.error('Failed to delete PID file directory ({0}).'.format(pidpath))
+                    result = False
 
         return result

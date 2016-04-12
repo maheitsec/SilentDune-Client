@@ -145,6 +145,11 @@ def run():
 
     args = parser.parse_args()
 
+    # --nodaemon only valid with start action
+    if args.nodaemon and args.action != 'start':
+        print('sdc-firewall: error: --nodaemon option not valid with stop or restart action')
+        sys.exit(1)
+
     _logger.addHandler(setup_logging(args.debug, args.config))
 
     # Dump debug information
@@ -158,7 +163,7 @@ def run():
         _logger.error('Invalid configuration file information, aborting.')
         sys.exit(1)
 
-    # Do not fork the daemon process, run in foreground. For systemd service.
+    # Do not fork the daemon process, run in foreground. For systemd service or debugging.
     if args.nodaemon:
         _daemon = SDCDaemon(args=args)
         _daemon.run()

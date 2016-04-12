@@ -38,6 +38,7 @@ class NodeInformation(ConsoleBase):
     ps = None
     pgrep = None
     sed = None
+    kill = None
     iptables_exec = None
     iptables_save = None
     iptables_restore = None
@@ -128,6 +129,7 @@ class NodeInformation(ConsoleBase):
         self.ps = self._which_wrapper('ps')
         self.pgrep = self._which_wrapper('pgrep')
         self.sed = self._which_wrapper('sed')
+        self.kill = self._which_wrapper('kill')
         self.iptables_exec = self._which_wrapper('iptables')
         self.iptables_save = self._which_wrapper('iptables-save')
         self.iptables_restore = self._which_wrapper('iptables-restore')
@@ -135,6 +137,9 @@ class NodeInformation(ConsoleBase):
         if self.ps is None or self.pgrep is None:
             _logger.critical('Unable to determine which services are running on this machine.')
             return False
+
+        if self.sed is None or self.kill is None:
+            _logger.critical('Missing system critical system executables.')
 
         if self.iptables_exec is None or self.iptables_save is None or self.iptables_restore is None:
             _logger.critical('Unable to find iptables executables.')

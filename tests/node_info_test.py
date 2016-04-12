@@ -19,7 +19,7 @@
 #
 
 # import pytest
-from utils.node_info import NodeInformation
+from silentdune_client.utils.node_info import NodeInformation
 
 
 def test_node_info():

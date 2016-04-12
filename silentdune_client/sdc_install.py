@@ -25,13 +25,14 @@ import os
 import shutil
 import sys
 
-import utils.configuration as configuration
+from subprocess import check_output, CalledProcessError
+
 from modules import __load_modules__
 from utils.configuration import ClientConfiguration
 from utils.console import ConsoleBase
 from utils.log import setup_logging
 from utils.node_info import NodeInformation
-from utils.misc import is_process_running, node_info_dump
+from utils.misc import is_process_running, node_info_dump, which
 
 try:
     from configparser import ConfigParser
@@ -55,6 +56,9 @@ class Installer(ConsoleBase):
 
     previous_firewall_service = None
 
+    # Location of the installed service unit or script file.
+    service_file = None
+
     def __init__(self, args, modules, node_info):
 
         self.__modules = modules
@@ -66,6 +70,11 @@ class Installer(ConsoleBase):
         """
         Loop through the modules to set their configuration file items and then save the configuration.
         """
+
+        # If this node is running systemd, remove the pidfile setting.
+        if self.node_info.sysd_installed:
+            self.__config.delete('settings', 'pidfile')
+
         for mod in self.__modules:
             result = mod.prepare_config(self.__config)
 
@@ -75,6 +84,105 @@ class Installer(ConsoleBase):
 
         # Write the configuration file out.
         return self.__config.write_config()
+
+    def install_service(self):
+        """
+        Based on everything we know, lets install the init service.
+        :return: True if successful, otherwise False.
+        """
+
+        self.cwrite('Installing firewall service...')
+
+        # Figure out our path
+        base_path = os.path.split(os.path.realpath(__file__))[0]
+
+        systemd_service_file = os.path.join(base_path, 'init/systemd.service')
+        sysv_service_file = os.path.join(base_path, 'init/sysv.service')
+
+        # Check and make sure we can find the init scripts.
+        if not os.path.exists(systemd_service_file) or \
+                not os.path.exists(sysv_service_file):
+            _logger.critical('Unable to find init service files.')
+            return False
+
+        firewall_exec = which('sdc-firewall')
+
+        if not firewall_exec:
+            self.cwriteline('[Error]', 'Unable to locate our firewall executable.')
+            return False
+
+        # Install systemd service file.
+        if self.node_info.sysd_installed:
+
+            path = None
+
+            # Determine systemd service unit install directory.
+            if os.path.exists('/usr/lib/systemd/system/'):  # Redhat based
+                path = '/usr/lib/systemd/system/'
+            elif os.path.exists('/lib/systemd/system/'):  # Ubuntu based
+                path = '/lib/systemd/system/'
+            elif os.path.exists('/etc/systemd/system/'):  # Last resort location
+                path = '/etc/systemd/system/'
+
+            if not path:
+                self.cwriteline('[Error]', 'Unable to locate systemd service unit path.')
+                return False
+
+            self.service_file = os.path.join(path, 'sdc-firewall.service')
+
+            # Replace key words with actual file locations.
+            sed_args = '"s/%%KILL%%/{0}/g;s/%%SDC-FIREWALL%%/{1}/g" > {2}'.format(
+                                 self.node_info.kill,
+                                 firewall_exec,
+                                 self.service_file
+                             )
+
+            try:
+                check_output(self.node_info.sed, sed_args)
+            except CalledProcessError:
+                _logger.error('Unable to copy systemd service file to system location.')
+                return False
+
+            # Set file permissions.
+            os.chmod(self.service_file, 0o500)
+
+            # Enable and start service
+            if not self.node_info.enable_service('sdc-firewall'):
+                self.cwriteline('[Error]', 'Firewall service failed to enable.')
+                return False
+
+            if not self.node_info.start_service('sdc-firewall'):
+                self.cwriteline('[Error]', 'Firewall service failed to start.')
+                return False
+
+        if self.node_info.sysv_installed:
+            # TODO: Write the sysv service install code.
+            pass
+
+        self.cwriteline('[OK]', 'Firewall service installed and started.')
+
+        return True
+
+    def remove_service(self):
+
+        # Remove the systemd service file.
+        if self.node_info.sysd_installed:
+
+            if self.node_info.is_service_running('sdc-firewall'):
+                if not self.node_info.stop_service('sdc-firewall'):
+                    _logger.debug('Firewall service failed to stop.')
+
+                if not self.node_info.disable_service('sdc-firewall'):
+                    _logger.debug('Unable to disable firewall service.')
+
+            if os.path.exists(self.service_file):
+                os.remove(self.service_file)
+
+        if self.node_info.sysv_installed:
+            # TODO: Write the sysv service removal code.
+            pass
+
+        self.cwriteline('[OK]', 'Firewall service removed.')
 
     def disable_previous_firewall(self):
         """
@@ -115,6 +223,9 @@ class Installer(ConsoleBase):
         # The following code can only run if we are running under privileged account.
         if self.node_info.root_user:
 
+            # Remove our firewall service.
+            self.remove_service()
+
             # Remove the directories the daemon process uses.
             self.__config.delete_directories()
             _logger.debug('Removed daemon process directories.')
@@ -123,11 +234,11 @@ class Installer(ConsoleBase):
             self.__config.delete_user()
             _logger.debug('Removed daemon process system user.')
 
-            # TODO: Remove daemon service init/service config file
-
             # Check to see if the previous firewall service is running or not
-            if not is_process_running(self.node_info.previous_firewall_service):
-                self.node_info.enable_service(self.node_info.previous_firewall_service)
+            if self.node_info.previous_firewall_service:
+                if not is_process_running(self.node_info.previous_firewall_service):
+                    self.node_info.enable_service(self.node_info.previous_firewall_service)
+                    self.node_info.start_service(self.node_info.previous_firewall_service)
 
             # if we are running as root, delete the configuration directory
             if self.node_info.config_root is not None \
@@ -152,10 +263,6 @@ class Installer(ConsoleBase):
             _logger.error('Error determining the configuration root directory.')
             return False
 
-        # Firewall check
-        if not self.node_info.previous_firewall_service:
-            return False
-
         if self.node_info.previous_firewall_service == 'sdc-firewall':
             self.cwriteline('[Error]', 'Silent Dune firewall service is already running, please uninstall first.')
             return False
@@ -171,7 +278,7 @@ class Installer(ConsoleBase):
         if self.node_info.root_user:
 
             # Create the daemon process user
-            if not self.__config.create_user():
+            if not self.__config.create_service_user():
                 return False
 
             # Create the directories the daemon process uses.
@@ -179,12 +286,9 @@ class Installer(ConsoleBase):
                 return False
 
             # Disable the current firewall service
-            if not self.disable_previous_firewall():
-                return False
-
-            # TODO: Install our firewall service
-
-            # TODO: Enable and start our firewall service
+            if self.node_info.previous_firewall_service:
+                if not self.disable_previous_firewall():
+                    return False
 
         #
         # Have each module do their install work now.
@@ -196,21 +300,21 @@ class Installer(ConsoleBase):
         if not self.write_config():
             return False
 
-        # TODO: Enable SD-Client service and start service
-
         # Have each module do their post install work now.
         for mod in self.__modules:
             if not mod.post_install(self.node_info):
+                return False
+
+        # Finally install and start the firewalls service.
+        if self.node_info.root_user:
+
+            if not self.install_service():
                 return False
 
         return True
 
 
 def run():
-    # # Figure out our root path
-    # base_path = os.path.dirname(os.path.realpath(sys.argv[0]))
-    # if '/install' in base_path:
-    #     base_path, tail = os.path.split(base_path)
 
     # Set global debug value and setup application logging.
     setup_logging('--debug' in sys.argv)
@@ -219,13 +323,22 @@ def run():
     if '--debug' in sys.argv:
         node_info_dump(sys.argv)
 
+    # Figure out our root path
+    base_path = os.path.split(os.path.realpath(__file__))[0]
+
+    # Check and make sure we can find the init scripts.
+    if not os.path.exists(os.path.join(base_path, 'init/systemd.service')) or \
+            not os.path.exists(os.path.join(base_path, 'init/sysv.service')):
+        print('sdc-install: error: Unable to locate client init scripts, unable to install')
+        sys.exit(1)
+
     # Setup i18n - Good for 2.x and 3.x python.
     kwargs = {}
     if sys.version_info[0] < 3:
         kwargs['unicode'] = True
     gettext.install('sdc_install', **kwargs)
 
-    sys.stdout.write('Looking for modules...')
+    print('Looking for modules...')
 
     # Get loadable module list
     module_list = __load_modules__()
