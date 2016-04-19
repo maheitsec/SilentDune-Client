@@ -45,7 +45,7 @@ class NodeInformation(ConsoleBase):
     iptables_restore = None
 
     # Configuration Items
-    root_user = False
+    root_user = (os.getuid() == 0)
     config_root = None
     machine_id = None
     pid_file = None
@@ -109,7 +109,7 @@ class NodeInformation(ConsoleBase):
 
     def _which_wrapper(self, name):
         """
-        If any program is not found, set an error.
+        If program is not found, set an error.
         :param name: Program name
         :return: Program path or None
         """
@@ -245,24 +245,17 @@ class NodeInformation(ConsoleBase):
         """
         Helper function for running system service commands.
         """
-        cmd = None
-
-        # Sys V service
-        if self.sysv_installed:
-            prog = 'service'
-            args = '{0} {1}'.format(name, cmd)
+        # SysV and Upstart default
+        prog = which('service')
+        args = [prog, name, cmd]  # Note order of 'name' and 'cmd'
 
         # SystemD
         if self.sysd_installed:
-            prog = 'systemctl'
-            args = '{0} {1}'.format(cmd, name)
-
-        if self.ups_installed:
-            prog = 'service'
-            args = '{0} {1}'.format(name, cmd)
+            prog = which('systemctl')
+        args = [prog, cmd, name]  # Note order of 'name' and 'cmd'
 
         try:
-            check_output([prog, args])
+            check_output(args)
             return True
         except CalledProcessError:
             _logger.error('Program "{0} {1}" did not run successfully.'.format(prog, args))

@@ -21,6 +21,7 @@
 import logging
 import os
 import platform
+import shutil
 import socket
 import sys
 from subprocess import check_output, CalledProcessError
@@ -77,18 +78,22 @@ def determine_config_root():
     root_failed = False
     home_failed = False
 
-    config_root = '/etc/silentdune'
+    config_root = '/etc/silentdune/'
+
+    # Check to see if the path already exist, if it does just return.
+    if os.path.exists(config_root):
+        return config_root
 
     # Test to see if we are running as root
     if os.getuid() == 0:
         test_file = os.path.join(config_root, 'test.tmp')
 
         try:
-            if not os.path.exists(config_root):
-                os.makedirs(config_root)
+            os.makedirs(config_root)
             h = open(test_file, 'w')
             h.close()
-            os.remove(test_file)
+
+            shutil.rmtree(config_root)
 
         except OSError:
             root_failed = True
@@ -99,14 +104,19 @@ def determine_config_root():
     # If root access has failed, try the current user's home directory
     if root_failed:
         config_root = os.path.join(home, '.silentdune')
+
+        # Check to see if the path already exist, if it does just return.
+        if os.path.exists(config_root):
+            return config_root
+
         test_file = os.path.join(config_root, 'test.tmp')
 
         try:
-            if not os.path.exists(config_root):
-                os.makedirs(config_root)
+            os.makedirs(config_root)
             h = open(test_file, 'w')
             h.close()
-            os.remove(test_file)
+
+            shutil.rmtree(config_root)
 
         except OSError:
             home_failed = True

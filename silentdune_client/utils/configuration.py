@@ -61,9 +61,13 @@ class ClientConfiguration(object):
         else:
             self._config_file = os.path.join(self._config_root, 'sdc.conf')
 
-        # Change the default path for pid and log file to config_root.
-        self.set(self._config_section, 'pidfile', os.path.join(self._config_root, 'sdc.pid'))
-        self.set(self._config_section, 'logfile', os.path.join(self._config_root, 'sdc.log'))
+        # Set the default file paths based on if we are running as root or not.
+        if os.getuid() == 0:
+            self.set(self._config_section, 'pidfile', '/var/run/silentdune/sdc.pid')
+            self.set(self._config_section, 'logfile', '/var/log/silentdune/sdc-firewall.log')
+        else:
+            self.set(self._config_section, 'pidfile', os.path.join(self._config_root, 'sdc.pid'))
+            self.set(self._config_section, 'logfile', os.path.join(self._config_root, 'sdc-firewall.log'))
 
         self.set(self._config_section, 'user', 'silentdune')
         self.set(self._config_section, 'group', 'silentdune')
@@ -230,9 +234,11 @@ class ClientConfiguration(object):
         user = self.get(self._config_section, 'user')
         group = self.get(self._config_section, 'group')
 
+        _logger.debug('Creating User: {0} with group {1}'.format(user, group))
+
         # Create the daemon process group.
         try:
-            check_output(['groupadd', '-f -r {0}'.format(group)])
+            check_output(['groupadd', '-f', '-r', '{0}'.format(group)])
             _logger.debug('Successfully created daemon process group.')
         except CalledProcessError:
             _logger.error('Unable to create daemon process group.')
@@ -247,14 +253,14 @@ class ClientConfiguration(object):
 
         # Create the daemon process user.
         try:
-            check_output(['useradd', '-r -g {0} {1}'.format(groupinfo.gr_gid, user)])
+            check_output(['useradd', '-r', '-g', '{0}'.format(groupinfo.gr_gid), '{0}'.format(user)])
         except:
             _logger.error('Unable to create the daemon process user.')
             return False
 
         # Get the user id number
         try:
-            pwd.getpwnam(self.get(self._config_section, 'user'))
+            pwd.getpwnam(user)
         except:
             _logger.error('Error looking up the daemon process user.')
             return False
@@ -270,24 +276,29 @@ class ClientConfiguration(object):
             user = self.get(self._config_section, 'user')
             group = self.get(self._config_section, 'group')
         except ValueError:
-            _logger.error('Unable to retrieve configuration values for User or Group.')
-            return False
+            return True
 
         # Remove user
         try:
-            check_output(['userdel', '-f {0}'.format(user)])
+            check_output(['userdel', '-f', '{0}'.format(user)])
             _logger.debug('Successfully removed daemon process user.')
         except CalledProcessError:
             _logger.error('Unable to remove daemon process user.')
             return False
 
-        # Remove group
+        # Test to see if the group was deleted.
         try:
-            check_output(['groupdel', '{0}'.format(group)])
-            _logger.debug('Successfully removed daemon process group.')
-        except CalledProcessError:
-            _logger.error('Unable to remove daemon process group.')
-            return False
+            groupinfo = grp.getgrnam(group)
+
+            # Remove group
+            try:
+                check_output(['groupdel', '{0}'.format(groupinfo.gr_name)])
+                _logger.debug('Successfully removed daemon process group.')
+            except CalledProcessError:
+                _logger.error('Unable to remove daemon process group.')
+                return False
+        except:
+            pass
 
         return True
 
@@ -321,20 +332,35 @@ class ClientConfiguration(object):
             _logger.error('Unable to get information about daemon process user and group.')
             return False
 
+        # Create configuration root directory.
+        try:
+            configpath = self._config_root
+            _logger.debug('Creating Configuration path ({0})'.format(configpath))
+            if not os.path.exists(configpath):
+                os.makedirs(configpath, 0o770)
+            os.chown(configpath, userinfo.pw_uid, groupinfo.gr_gid)
+        except:
+            _logger.error('Unable to create PID file path.')
+            return False
+
+        # If needed, create PID file path.
         try:
             if pidfile:
                 pidpath = os.path.split(pidfile)[0]
+                _logger.debug('Creating PID path ({0})'.format(pidpath))
                 if not os.path.exists(pidpath):
-                    os.makedirs(pidpath, '770')
+                    os.makedirs(pidpath, 0o770)
                 os.chown(pidpath, userinfo.pw_uid, groupinfo.gr_gid)
         except:
             _logger.error('Unable to create PID file path.')
             return False
 
+        # Create Log file path.
         try:
             logpath = os.path.split(logfile)[0]
+            _logger.debug('Creating Log file path ({0})'.format(logpath))
             if not os.path.exists(logpath):
-                os.makedirs(logpath, '770')
+                os.makedirs(logpath, 0o770)
             os.chown(logpath, userinfo.pw_uid, groupinfo.gr_gid)
         except:
             _logger.error('Unable to create LOG file path.')
@@ -381,5 +407,13 @@ class ClientConfiguration(object):
                 except:
                     _logger.error('Failed to delete PID file directory ({0}).'.format(pidpath))
                     result = False
+
+        # Remove Configuration path
+        if os.path.exists(self._config_root):
+            try:
+                shutil.rmtree(self._config_root)
+            except:
+                _logger.error('Failed to delete config directory ({0}).'.format(logpath))
+                result = False
 
         return result

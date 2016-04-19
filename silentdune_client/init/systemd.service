@@ -10,10 +10,8 @@ Conflicts=iptables.service ip6tables.service ebtables.service ipset.service fire
 [Service]
 User=silentdune
 Group=silentdune
-ExecStart=%%SDC-FIREWALL%% --nodaemon start
+ExecStart=%%SDC-FIREWALL%% --debug --nodaemon start
 ExecReload=%%KILL%% -HUP $MAINPID
-StandardOutput=null
-StandardError=null
 
 [Install]
 WantedBy=basic.target

@@ -24,7 +24,7 @@ import logging
 import os
 import shutil
 import sys
-
+import subprocess
 from subprocess import check_output, CalledProcessError
 
 from silentdune_client.modules import __load_modules__
@@ -70,10 +70,6 @@ class Installer(ConsoleBase):
         """
         Loop through the modules to set their configuration file items and then save the configuration.
         """
-
-        # If this node is running systemd, remove the pidfile setting.
-        if self.node_info.sysd_installed:
-            self.__config.delete('settings', 'pidfile')
 
         for mod in self.__modules:
             result = mod.prepare_config(self.__config)
@@ -131,20 +127,23 @@ class Installer(ConsoleBase):
             self.service_file = os.path.join(path, 'sdc-firewall.service')
 
             # Replace key words with actual file locations.
-            sed_args = '"s/%%KILL%%/{0}/g;s/%%SDC-FIREWALL%%/{1}/g" > {2}'.format(
-                                 self.node_info.kill,
-                                 firewall_exec,
-                                 self.service_file
+            sed_args = 's/%%KILL%%/{0}/g;s/%%SDC-FIREWALL%%/{1}/g'.format(
+                                 self.node_info.kill.replace('/', '\/'),
+                                 firewall_exec.replace('/', '\/')
                              )
 
+            args = [self.node_info.sed, sed_args, systemd_service_file]
+
             try:
-                check_output(self.node_info.sed, sed_args)
+                _logger.debug('Saving systemd service file to {0}'.format(self.service_file))
+                with open(self.service_file, 'w') as handle:
+                    subprocess.call(args, stdout=handle)
             except CalledProcessError:
                 _logger.error('Unable to copy systemd service file to system location.')
                 return False
 
             # Set file permissions.
-            os.chmod(self.service_file, 0o500)
+            os.chmod(self.service_file, 0o644)
 
             # Enable and start service
             if not self.node_info.enable_service('sdc-firewall'):
@@ -219,6 +218,7 @@ class Installer(ConsoleBase):
         Use this method to clean up after a failed install
         """
         self.cwrite('Cleaning up...')
+        return
 
         # The following code can only run if we are running under privileged account.
         if self.node_info.root_user:
@@ -253,6 +253,10 @@ class Installer(ConsoleBase):
         Begin installing the Silent Dune Client.
         """
 
+        # If this node is running systemd, remove the pidfile setting.
+        if self.node_info.sysd_installed:
+            self.__config.delete('settings', 'pidfile')
+
         # Check to see that the NodeInformation information gathering was successful.
         if self.node_info.error:
             _logger.error('Gathering information about this node failed.')
@@ -285,17 +289,20 @@ class Installer(ConsoleBase):
             if not self.__config.create_directories():
                 return False
 
-            # Disable the current firewall service
-            if self.node_info.previous_firewall_service:
-                if not self.disable_previous_firewall():
-                    return False
-
         #
         # Have each module do their install work now.
         #
         for mod in self.__modules:
             if not mod.install_module(self.node_info):
                 return False
+
+        # The following code can only run if we are running under privileged account.
+        if self.node_info.root_user:
+
+            # Disable the current firewall service
+            if self.node_info.previous_firewall_service:
+                if not self.disable_previous_firewall():
+                    return False
 
         if not self.write_config():
             return False

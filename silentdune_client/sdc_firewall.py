@@ -155,14 +155,14 @@ def run():
         print('sdc-firewall: error: --nodaemon option not valid with stop or restart action')
         sys.exit(1)
 
-    _logger.addHandler(setup_logging(args.debug, args.config))
+    # Read the local configuration file.
+    config = ClientConfiguration(args.config).read_config()
+
+    # setup_logging(args.debug, config.get('settings', 'logfile'))
 
     # Dump debug information
     if args.debug:
         node_info_dump(args)
-
-    # Read the local configuration file.
-    config = ClientConfiguration(args.config).read_config()
 
     if not config:
         _logger.error('Invalid configuration file information, aborting.')

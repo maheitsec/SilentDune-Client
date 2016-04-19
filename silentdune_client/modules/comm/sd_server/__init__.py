@@ -234,8 +234,9 @@ class SilentDuneServerModule(BaseModule):
         # TODO: Get and Upload adapter interface list to server
         # Note: It might be better to call ifconfig instead of using netifaces to get adapter info.
 
-        if not self._download_bundleset(node_info):
-            return False
+        # TODO: Download the bundle rules in the daemon process.
+        # if not self._download_bundleset(node_info):
+        #     return False
 
         return True
 
@@ -252,7 +253,6 @@ class SilentDuneServerModule(BaseModule):
 
         if self._node:
             _logger.warning('Node already registered, using previously registered node information.')
-            # TODO: Maybe we should query the user here. Multiple nodes with the same machine_id will be a problem.
         else:
 
             self.cwrite('Registering Node...  ')
