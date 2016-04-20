@@ -57,7 +57,7 @@ class Installer(ConsoleBase):
     previous_firewall_service = None
 
     # Location of the installed service unit or script file.
-    service_file = None
+    service_out_file = None
 
     def __init__(self, args, modules, node_info):
 
@@ -92,12 +92,12 @@ class Installer(ConsoleBase):
         # Figure out our path
         base_path = os.path.split(os.path.realpath(__file__))[0]
 
-        systemd_service_file = os.path.join(base_path, 'init/systemd.service')
-        sysv_service_file = os.path.join(base_path, 'init/sysv.service')
+        systemd_in_file = os.path.join(base_path, 'init/sdc-firewall.service.in')
+        init_in_file = os.path.join(base_path, 'init/sdc-firewall.init.in')
 
         # Check and make sure we can find the init scripts.
-        if not os.path.exists(systemd_service_file) or \
-                not os.path.exists(sysv_service_file):
+        if not os.path.exists(systemd_in_file) or \
+                not os.path.exists(init_in_file):
             _logger.critical('Unable to find init service files.')
             return False
 
@@ -112,38 +112,44 @@ class Installer(ConsoleBase):
 
             path = None
 
-            # Determine systemd service unit install directory.
-            if os.path.exists('/usr/lib/systemd/system/'):  # Redhat based
-                path = '/usr/lib/systemd/system/'
-            elif os.path.exists('/lib/systemd/system/'):  # Ubuntu based
-                path = '/lib/systemd/system/'
-            elif os.path.exists('/etc/systemd/system/'):  # Last resort location
-                path = '/etc/systemd/system/'
+            # TODO: Need to look for selinux and apply a service policy module before saving to system locations.
+            #
+            # # Determine systemd service unit install directory.
+            # if os.path.exists('/usr/lib/systemd/system/'):  # Redhat based
+            #     path = '/usr/lib/systemd/system/'
+            # elif os.path.exists('/lib/systemd/system/'):  # Ubuntu based
+            #     path = '/lib/systemd/system/'
+            # elif os.path.exists('/etc/systemd/system/'):  # Last resort location
+            #     path = '/etc/systemd/system/'
+            #
+            # if not path:
+            #     self.cwriteline('[Error]', 'Unable to locate systemd service unit path.')
+            #     return False
+            #
 
-            if not path:
-                self.cwriteline('[Error]', 'Unable to locate systemd service unit path.')
-                return False
+            # Just save to the systemd user defined location for now.
+            path = '/etc/systemd/system/'
 
-            self.service_file = os.path.join(path, 'sdc-firewall.service')
+            self.service_out_file = os.path.join(path, 'sdc-firewall.service')
 
-            # Replace key words with actual file locations.
+            # Replace key words with local file locations.
             sed_args = 's/%%KILL%%/{0}/g;s/%%SDC-FIREWALL%%/{1}/g'.format(
                                  self.node_info.kill.replace('/', '\/'),
                                  firewall_exec.replace('/', '\/')
                              )
 
-            args = [self.node_info.sed, sed_args, systemd_service_file]
+            args = [self.node_info.sed, sed_args, systemd_in_file]
 
             try:
-                _logger.debug('Saving systemd service file to {0}'.format(self.service_file))
-                with open(self.service_file, 'w') as handle:
+                _logger.debug('Saving systemd service file to {0}'.format(self.service_out_file))
+                with open(self.service_out_file, 'w') as handle:
                     subprocess.call(args, stdout=handle)
             except CalledProcessError:
                 _logger.error('Unable to copy systemd service file to system location.')
                 return False
 
             # Set file permissions.
-            os.chmod(self.service_file, 0o644)
+            os.chmod(self.service_out_file, 0o644)
 
             # Enable and start service
             if not self.node_info.enable_service('sdc-firewall'):
@@ -174,8 +180,8 @@ class Installer(ConsoleBase):
                 if not self.node_info.disable_service('sdc-firewall'):
                     _logger.debug('Unable to disable firewall service.')
 
-            if os.path.exists(self.service_file):
-                os.remove(self.service_file)
+            if os.path.exists(self.service_out_file):
+                os.remove(self.service_out_file)
 
         if self.node_info.sysv_installed:
             # TODO: Write the sysv service removal code.
@@ -324,7 +330,7 @@ class Installer(ConsoleBase):
 def run():
 
     # Set global debug value and setup application logging.
-    setup_logging('--debug' in sys.argv)
+    _logger.addHandler(setup_logging('--debug' in sys.argv))
 
     # See if we need to dump information about this node.
     if '--debug' in sys.argv:
@@ -336,8 +342,8 @@ def run():
     base_path, package_name = os.path.split(app_path)
 
     # Check and make sure we can find the init scripts.
-    if not os.path.exists(os.path.join(app_path, 'init/systemd.service')) or \
-            not os.path.exists(os.path.join(app_path, 'init/sysv.service')):
+    if not os.path.exists(os.path.join(app_path, 'init/sdc-firewall.service.in')) or \
+            not os.path.exists(os.path.join(app_path, 'init/sdc-firewall.init.in')):
         print('sdc-install: error: Unable to locate client init scripts, unable to install')
         sys.exit(1)
 
@@ -347,13 +353,11 @@ def run():
         kwargs['unicode'] = True
     gettext.install('sdc_install', **kwargs)
 
-    print('Looking for modules...')
-
     # Get loadable module list
     module_list = __load_modules__(base_path=base_path)
 
     # Setup program arguments.
-    parser = argparse.ArgumentParser(prog='sdc-install')  # , formatter_class=argparse.RawTextHelpFormatter)
+    parser = argparse.ArgumentParser(prog='sdc-install') 
     parser.add_argument(_('--debug'), help=_('Enable debug output'), default=False, action='store_true')  # noqa
 
     # Loop through the module objects and add any argparse arguments.

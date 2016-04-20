@@ -12,6 +12,8 @@ User=silentdune
 Group=silentdune
 ExecStart=%%SDC-FIREWALL%% --debug --nodaemon start
 ExecReload=%%KILL%% -HUP $MAINPID
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=basic.target

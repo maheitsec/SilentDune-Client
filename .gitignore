@@ -1,5 +1,6 @@
 test-rpm.sh
 
+selinux/
 
 ### JetBrains ###
 # Covers JetBrains IDEs: IntelliJ, RubyMine, PhpStorm, AppCode, PyCharm, CLion

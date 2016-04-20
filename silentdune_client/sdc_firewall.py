@@ -89,6 +89,10 @@ def run():
 
             while True:
 
+                # Reset loop controllers
+                self.stopProcessing = False
+                self.reload = False
+
                 # Read the local configuration file.
                 self._config = ClientConfiguration(self._args.config).read_config()
 
@@ -103,7 +107,7 @@ def run():
                 _logger.debug('Starting main processing loop.')
                 while not self.stopProcessing and child.is_alive():
 
-                    time.sleep(2)
+                    time.sleep(10)
                     _logger.info('Run loop.')
 
                 if child.is_alive():
@@ -134,6 +138,9 @@ def run():
         if not _daemon.reload:
             _logger.warning("Firewall: Got SIGHUP, reloading.")
         _daemon.reload = True
+        _daemon.stopProcessing = True
+
+    _logger.addHandler(setup_logging('--debug' in sys.argv))
 
     # Setup i18n - Good for 2.x and 3.x python.
     kwargs = {}
@@ -157,8 +164,6 @@ def run():
 
     # Read the local configuration file.
     config = ClientConfiguration(args.config).read_config()
-
-    # setup_logging(args.debug, config.get('settings', 'logfile'))
 
     # Dump debug information
     if args.debug:

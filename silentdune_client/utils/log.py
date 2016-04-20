@@ -22,10 +22,8 @@ import logging
 import os
 import sys
 
-_logger = logging.getLogger('sd-client')
 
-
-def setup_logging(debug=False, logfile=None):
+def setup_logging(debug=False):
     """
     Setup python logging
     """
@@ -42,16 +40,8 @@ def setup_logging(debug=False, logfile=None):
         # Setup logging formatter
         formatter = logging.Formatter('%(levelname)s: %(message)s')
 
-    # If we have a logfile, send output to it.
-    if logfile:
-        # Setup file logging handler
-        handler = logging.FileHandler(logfile)
-        handler.setFormatter(formatter)
-        _logger.addHandler(handler)
-    else:
-        # Setup stream logging handler
-        handler = logging.StreamHandler(sys.stdout)
-        handler.setFormatter(formatter)
-        _logger.addHandler(handler)
+    # Setup stream logging handler
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(formatter)
 
     return handler

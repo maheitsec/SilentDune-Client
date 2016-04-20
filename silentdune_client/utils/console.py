@@ -38,7 +38,7 @@ class ConsoleBase(object):
         Write a message to stdout or to debug logger with no linefeed.
         """
 
-        if silentdune_client.utils.configuration.debug:
+        if _logger.getEffectiveLevel() == logging.DEBUG:
             if debug_msg is None:
                 _logger.debug(message)
             else:
@@ -52,7 +52,7 @@ class ConsoleBase(object):
         Write a message to stdout or to debug logger with linefeed.
         """
 
-        if silentdune_client.utils.configuration.debug:
+        if _logger.getEffectiveLevel() == logging.DEBUG:
             if debug_msg is None:
                 _logger.debug(message)
             else:

@@ -316,8 +316,7 @@ class NodeInformation(ConsoleBase):
 
         # SystemD service
         if self.sysd_installed:
-            if not self._run_service_command('unmask', name):
-                return False
+            self._run_service_command('unmask', name)
             return self._run_service_command('enable', name)
 
         # Upstart service
