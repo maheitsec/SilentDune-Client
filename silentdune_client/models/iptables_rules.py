@@ -19,58 +19,13 @@
 #
 
 import io
-import json
 import logging
 import operator
 from datetime import datetime
 
+from silentdune_client.models.json_base import JsonObject
+
 _logger = logging.getLogger('sd-client')
-
-
-class JsonObject(object):
-
-    _json_data = False
-
-    def __init__(self, *args, **kwargs):
-        """
-        If parameter values in args, then the value is expected to be a dictionary from a node json response
-        from the server.
-
-        If parameter values are in kwargs, then they are named parameters passed when the object is instantiated.
-        """
-        if args is not None and len(args) is not 0 and args[0] is not None:
-            self._json_data = True
-            for key, value in args[0].items():
-                self.__dict__[key] = value
-                # print('{0} : {1}'.format(key, value))
-
-        else:
-            for key, value in kwargs.items():
-                self.__dict__[key] = value
-                # print('{0} : {1}'.format(key, value))
-
-    def to_json(self):
-        return json.dumps(self, default=lambda o: o.__dict__, sort_keys=True)
-
-    def to_dict(self):
-        data = dict()
-        for key, value in self.__dict__.items():
-            if not key.startswith("__") and value is not None:
-                data[key] = value
-        return data
-
-    def dict_to_obj_array(self, cls, data):
-        """
-        # Convert dict to array of objects of type cls
-        """
-        if data is None:
-            return None
-
-        ol = list()
-        for x in range(0, len(data)):
-            ol.append(cls(data[x]))
-
-        return ol
 
 
 class Bundle(JsonObject):
@@ -83,32 +38,6 @@ class Bundle(JsonObject):
     desc = None
     notes = None
     default = False
-
-
-class Node(JsonObject):
-    """
-    Represents the NodeSerializer json schema
-    """
-    id = None  # PK value
-    platform = None  # Firewall platform, IE: iptables
-    os = None  # System, IE: linux, windows, macos, freebsd, netbsd.
-    dist = None  # Distribution Name.
-    dist_version = None  # Distribution Version.
-    hostname = None
-    python_version = None
-    machine_id = None  # Unique machine ID.
-    last_connection = None  # Last connection datetime stamp.
-    node_sync = False  # If True, server is requesting this Node to push it's information to the server.
-    notes = None  # Notes about this node
-
-
-class NodeBundle(JsonObject):
-    """
-    Represents the NodeBundleSerializer json schema
-    """
-    id = None  # PK value
-    node = None  # Node ID value
-    bundle = None  # Bundle ID value
 
 
 class IPMachineSet(JsonObject):

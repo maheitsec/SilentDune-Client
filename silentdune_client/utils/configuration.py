@@ -27,7 +27,7 @@ import shutil
 from collections import OrderedDict
 from subprocess import check_output, CalledProcessError
 
-from silentdune_client.utils.misc import determine_config_root, get_active_firewall
+from silentdune_client.utils.misc import determine_config_root, get_active_firewall, rmdir
 
 try:
     from configparser import ConfigParser
@@ -393,7 +393,7 @@ class ClientConfiguration(object):
         logpath = os.path.split(logfile)[0]
         if os.path.exists(logpath) and os.path.realpath(logpath) != '/':
             try:
-                shutil.rmtree(logpath)
+                rmdir(logpath)
             except:
                 _logger.error('Failed to delete logfile directory ({0}).'.format(logpath))
                 result = False
@@ -403,7 +403,7 @@ class ClientConfiguration(object):
             pidpath = os.path.split(pidfile)[0]
             if os.path.exists(pidpath) and os.path.realpath(pidpath) != '/':
                 try:
-                    shutil.rmtree(pidpath)
+                    rmdir(pidpath)
                 except:
                     _logger.error('Failed to delete PID file directory ({0}).'.format(pidpath))
                     result = False
@@ -411,7 +411,7 @@ class ClientConfiguration(object):
         # Remove Configuration path
         if os.path.exists(self._config_root):
             try:
-                shutil.rmtree(self._config_root)
+                rmdir(self._config_root)
             except:
                 _logger.error('Failed to delete config directory ({0}).'.format(logpath))
                 result = False

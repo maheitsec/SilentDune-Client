@@ -20,12 +20,13 @@
 
 import logging
 import os
-import requests
 import socket
 
+import requests
+
+from silentdune_client.models.iptables_rules import IPMachineSubset, Bundle, IPRulesFileWriter
+from silentdune_client.models.node import Node, NodeBundle
 from silentdune_client.utils.console import ConsoleBase
-from silentdune_client.modules.comm.sd_server.json_models import \
-    Node, NodeBundle, IPMachineSubset, Bundle, IPRulesFileWriter
 
 _logger = logging.getLogger('sd-client')
 

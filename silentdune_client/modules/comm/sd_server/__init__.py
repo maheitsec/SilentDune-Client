@@ -20,16 +20,19 @@
 
 import logging
 import os
-import pkg_resources
 import platform
-import requests
 import socket
 import sys
 from subprocess import check_output, CalledProcessError
 
-from silentdune_client.modules.comm.sd_server.json_models import Node, NodeBundle
+import pkg_resources
+import requests
+
+from silentdune_client import modules
+from silentdune_client.models.node import Node, NodeBundle
+from silentdune_client.modules import QueueTask
 from silentdune_client.modules.comm.sd_server.connection import SDSConnection
-from silentdune_client.modules import BaseModule
+from silentdune_client.modules.firewall.manager import SilentDuneClientFirewallModule, TASK_FIREWALL_RELOAD_RULES
 from silentdune_client.utils.misc import is_valid_ipv4_address, is_valid_ipv6_address
 
 _logger = logging.getLogger('sd-client')
@@ -42,7 +45,7 @@ module_list = {
 }
 
 
-class SilentDuneServerModule(BaseModule):
+class SilentDuneServerModule(modules.BaseModule):
     """ Silent Dune Server Module """
 
     # Module properties
@@ -65,9 +68,12 @@ class SilentDuneServerModule(BaseModule):
     def __init__(self):
 
         # Set our module name
-        self._name = 'SilentDuneServerModule'
+        # self._name = 'SilentDuneServerModule'
         self._arg_name = 'server'
         self._config_section = 'server_module'
+
+        # Enable multi-threading
+        self.wants_processing_thread = True
 
         try:
             self._version = pkg_resources.get_distribution(__name__).version
@@ -239,6 +245,30 @@ class SilentDuneServerModule(BaseModule):
         #     return False
 
         return True
+
+    def service_startup(self):
+        _logger.debug('{0} thread startup called'.format(self.get_name()))
+        return True
+
+    def service_shutdown(self):
+        _logger.debug('{0} thread shutdown called'.format(self.get_name()))
+        return True
+
+    def process_loop(self, task):
+        # _logger.debug('{0} processing loop called'.format(self.get_name()))
+
+        time = self.get_ticks() * self.get_counter()
+
+        # Every 10 seconds, send the firewall module a QueueTask
+        if time % 10 == 0.0:
+            _logger.debug('Sending {0} module a task.'.format(type(SilentDuneClientFirewallModule).__name__))
+
+            task = QueueTask(TASK_FIREWALL_RELOAD_RULES,
+                             self.get_name(),
+                             SilentDuneClientFirewallModule().get_name(),
+                             None)
+
+            self.send_parent_task(task)
 
     def _register_node(self, node_info):
         """

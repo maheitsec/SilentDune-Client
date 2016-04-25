@@ -27,6 +27,9 @@ import signal
 import sys
 import time
 
+from multiprocessing import Manager
+
+from silentdune_client import modules
 from silentdune_client.utils.log import setup_logging
 from silentdune_client.utils.misc import node_info_dump
 
@@ -52,26 +55,26 @@ def run():
 
             super(SDCDaemon, self).__init__(*args, **kwargs)
 
-        def process_tasks(self, qu):
-
-            _logger.debug('Processing queue thread started.')
-
-            while True:
-
-                try:
-                    task = qu.get(1.0)
-                except multiprocessing.TimeoutError:
-                    continue
-
-                if task:
-
-                    time.sleep(0.1)
-
-                else:
-                    _logger.debug('Got signal that we are done processing, closing processing queue thread.')
-                    break
-
-            _logger.debug('Processing queue thread closed cleanly.')
+        # def process_tasks(self, qu):
+        #
+        #     _logger.debug('Processing queue thread started.')
+        #
+        #     while True:
+        #
+        #         try:
+        #             task = qu.get(1.0)
+        #         except multiprocessing.TimeoutError:
+        #             continue
+        #
+        #         if task:
+        #
+        #             time.sleep(0.1)
+        #
+        #         else:
+        #             _logger.debug('Got signal that we are done processing, closing processing queue thread.')
+        #             break
+        #
+        #     _logger.debug('Processing queue thread closed cleanly.')
 
         def run(self):
 
@@ -96,27 +99,88 @@ def run():
                 # Read the local configuration file.
                 self._config = ClientConfiguration(self._args.config).read_config()
 
-                # TODO: Load client modules here.
+                # Get loadable module list
+                mods = modules.__load_modules__(base_path=base_path)
 
-                _logger.debug('Initializing processing queue child.')
-                qu = multiprocessing.Queue()
-                child = multiprocessing.Process(target=self.process_tasks, args=(qu,))
-                child.start()
+                # Have each module do their startup work now.
+                for mod in mods:
+                    result = mod.service_startup()
+                    if result is not None and result is False:
+                        _logger.critical('Module ({0}) failed during startup.'.format(mod.get_name))
+                        sys.exit(1)
 
-                # loop until we get a signal
+                pmanager = Manager()
+                mqueue = pmanager.Queue()
+
+                # Keep the created child processes.
+                cprocs = dict()
+                cqueues = dict()
+
+                # Setup thread for modules wanting a processing thread.
+                for mod in mods:
+                    name = mod.get_name()
+
+                    cprocs[name] = None  # Add a place holder for the module process
+
+                    if mod.wants_processing_thread:
+                        _logger.debug('Initializing thread for {0}.'.format(name))
+
+                        cqueues[name] = multiprocessing.Queue()
+                        cprocs[name] = multiprocessing.Process(
+                            target=mod.process_handler, args=(cqueues[name], mqueue, ))
+                        cprocs[name].start()
+
+                counter = 50
+
+                # loop until we get an external signal
                 _logger.debug('Starting main processing loop.')
-                while not self.stopProcessing and child.is_alive():
+                while not self.stopProcessing:
 
-                    time.sleep(10)
-                    _logger.info('Run loop.')
+                    # Check management queue for any QueueTask task
+                    try:
+                        task = mqueue.get_nowait()
+                        _logger.debug('Main process: task from {0} found.'.format(task.get_src_name()))
+                        _logger.debug('Sending task to {0}'.format(task.get_dest_name()))
 
-                if child.is_alive():
-                    _logger.debug('Waiting for processing queue child process to finish.')
-                    qu.put(None)
+                        if task:
+                            # Find the destination module and send task to it.
+                            if not cqueues[task.get_dest_name()]:
+                                _logger.error('QueueTask object has unknown destination module.')
 
-                qu.close()
-                qu.join_thread()
-                child.join()
+                            cqueues[task.get_dest_name()].put(task)
+                    except:
+                        pass
+
+                    time.sleep(0.01)
+
+                    counter -= 1
+
+                    if not counter:
+                        _logger.info('Run loop.')
+                        counter = 50
+
+                    # Check to see that module processes are still running.
+                    for mod in mods:
+                        if mod.get_name() in cprocs and cprocs[mod.get_name()]:
+                            if not cprocs[mod.get_name()].is_alive():
+                                # TODO: Maybe restart the module?
+                                _logger.critical('{0} module has unexpectedly stopped.'.format(mod.get_name()))
+                                self.stopProcessing = True
+                                break
+
+                # Stop all module processing threads
+                _logger.debug('Ending main processing loop.')
+
+                for mod in mods:
+                    name = mod.get_name()
+                    _logger.debug('Stopping {0} thread.'.format(name))
+
+                    if cprocs[name] and cprocs[name].is_alive():
+                        _logger.debug('Signalling {0} module to stop processing.'.format(name))
+                        cqueues[name].put(modules.QueueTask(modules.TASK_STOP_PROCESSING))
+                        cqueues[name].close()
+                        cqueues[name].join_thread()
+                        cprocs[name].join()
 
                 # If we are not reloading, just shutdown.
                 if not self.reload:

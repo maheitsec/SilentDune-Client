@@ -69,6 +69,23 @@ def node_info_dump(args):
     _logger.debug(args)
 
 
+def rmdir(path):
+    """
+    Safely delete a path, make sure its not the filesystem root.
+    :param path:
+    :return:
+    """
+    if not path:
+        return False
+
+    path = os.path.realpath(path)
+
+    if os.path.exists(path) and path != '/':
+        shutil.rmtree(path)
+
+    return True
+
+
 def determine_config_root():
     """
     Determine where we are going to write the SD node configuration file.
@@ -93,7 +110,7 @@ def determine_config_root():
             h = open(test_file, 'w')
             h.close()
 
-            shutil.rmtree(config_root)
+            rmdir(config_root)
 
         except OSError:
             root_failed = True
@@ -116,7 +133,7 @@ def determine_config_root():
             h = open(test_file, 'w')
             h.close()
 
-            shutil.rmtree(config_root)
+            rmdir(config_root)
 
         except OSError:
             home_failed = True

@@ -19,7 +19,9 @@
 #
 
 import logging
+import multiprocessing
 import os
+import time
 
 
 from silentdune_client.utils.console import ConsoleBase
@@ -27,6 +29,44 @@ from silentdune_client.utils.module_loading import import_by_str
 from silentdune_client.utils.exceptions import ModuleLoadError
 
 _logger = logging.getLogger('sd-client')
+
+# Parent to Child task queue IDs
+TASK_STOP_PROCESSING = 0
+
+# Child to Parent task queue IDs
+TASK_IS_MODULE_AVAIL = 100  # As the parent process if another module is available.
+TASK_SEND_TASK_TO_MODULE = 110  # Send a QueueTask object to another module
+
+
+class QueueTask(object):
+    """
+    The QueueTask object is an object to be passed between the parent processing thread
+    and the module processing threads.  Allows for back and forth communication along with
+    passing tasks between module processing threads.
+    """
+
+    _task_id = None  # One of the TASK id value from above.
+    _src_name = None  # Source module name
+    _dest_name = None  # Destination module name
+    _data = None  # Data for this task.
+
+    def __init__(self, task_id, src_name=None, dest_name=None, data=None):
+        self._task_id = task_id
+        self._src_name = src_name
+        self._dest_name = dest_name
+        self._data = data
+
+    def get_task_id(self):
+        return self._task_id
+
+    def get_src_name(self):
+        return self._src_name
+
+    def get_dest_name(self):
+        return self._dest_name
+
+    def get_data(self):
+        return self._data
 
 
 class BaseModule(ConsoleBase):
@@ -36,26 +76,68 @@ class BaseModule(ConsoleBase):
     """
 
     # The name of the module and version.
-    _name = 'UnknownModule'
+    # _name = 'UnknownModule'
     _arg_name = 'unknown'  # This is the argparser name for this module
     _config_section = 'unknown'  # This is the configuration file section name
     _version = '0.0.1'
     _config = None
     _enabled = True
 
+    # Multi thread processing properties
+    wants_processing_thread = False  # Set this to true if your module will use a child processing thread.
+
+    # Parent process management queue.  This is only valid if we are using a processing thread.
+    _mqueue = None
+
+    # Delay to wait for a message from the parent.  After timeout has expired, process_loop is called.
+    _queue_timeout = 1.0  # Min = 0.01, Max = 2.0.
+
+    # Process counter, this value is incremented by one each time the process_loop method is called.
+    # The _queue_timeout value and the _process_counter can be used together to determine roughly how
+    # much time has passed. See self.get_ticks()
     #
-    # Virtual Installer Hook Methods
+    #    Number of times process_loop is called per second = ticks = ((10.0 / _queue_timeout) / 10.0)
+    #    Total seconds = time = (ticks * _process_counter)
+    #    Do something every 20 seconds: time % 20
     #
+    _process_counter = 0
+
+    """
+    Installer Virtual Methods
+    """
+
     def get_name(self):
-        return self._name
+        """
+        :return: module name
+        """
+        # return self._name
+        return type(self).__name__
 
     def get_version(self):
+        """
+        :return: module version
+        """
         return self._version
+
+    def get_ticks(self):
+        """
+        Return the number of times per second the process_loop will be called.
+        """
+        return (10.0 / self._queue_timeout) / 10.0
+
+    def get_counter(self):
+        """
+        Return the self._process_counter value.
+        """
+        return self._process_counter
 
     def add_installer_arguments(self, parser):
         pass
 
     def get_config(self):
+        """
+        :return: configuration
+        """
         return self._config
 
     def disable_module(self):
@@ -70,7 +152,7 @@ class BaseModule(ConsoleBase):
         :param args: An argparse object.
         :return: True if command line arguments are valid, otherwise False.
         """
-        return True
+        pass
 
     def validate_config(self, config):
         """
@@ -78,7 +160,7 @@ class BaseModule(ConsoleBase):
         :param config: A ConfigParser object.
         :return: True if configuration file values are valid, otherwise False.
         """
-        return True
+        pass
 
     def prepare_config(self, config):
         """
@@ -86,7 +168,7 @@ class BaseModule(ConsoleBase):
         :param config: A ClientConfiguration object.
         :return: True if configuration file values were prepared correctly, otherwise False.
         """
-        return True
+        pass
 
     def pre_install(self, node_info):
         """
@@ -94,7 +176,7 @@ class BaseModule(ConsoleBase):
         :param installer: The Installer object.
         :return: True if successful, otherwise False.
         """
-        return True
+        pass
 
     def install_module(self, node_info):
         """
@@ -102,7 +184,7 @@ class BaseModule(ConsoleBase):
         :param installer: The Installer object.
         :return: True if successful, otherwise False.
         """
-        return True
+        pass
 
     def post_install(self, node_info):
         """
@@ -110,7 +192,7 @@ class BaseModule(ConsoleBase):
         :param installer: The Installer object.
         :return: True if successful, otherwise False.
         """
-        return True
+        pass
 
     def uninstall_module(self, node_info):
         """
@@ -118,7 +200,92 @@ class BaseModule(ConsoleBase):
         :param installer: The Installer object.
         :return: True if successful, otherwise False.
         """
-        return True
+        pass
+
+    """
+    Service Daemon Virtual Methods
+    """
+
+    def service_startup(self):
+        """
+        Called by the service daemon during service start or reload.
+        :return: True if successful, otherwise False.
+        """
+        pass
+
+    def service_shutdown(self):
+        """
+        Called by the service daemon during service stop.
+        :return: True if successful, otherwise False.
+        """
+        pass
+
+    def process_task(self, task):
+        """
+        Process a QueueTask object and do something. Called by the process_handler method
+        when there is a QueueTask object sent by the parent process.
+        :param task:
+        :return:
+        """
+        pass
+
+    def process_loop(self):
+        """
+        This is called during after each idle timeout period has expired in process_handler.
+        This method should do some work if needed and then return to the process_handler.
+        Do not set a long term loop in this method. Doing so will break the parent processing.
+        :return:
+        """
+        pass
+
+    def process_handler(self, queue, mqueue):
+        """
+        !!! Please do not override this method, override the process_loop method !!!
+        Called during the service loop.
+        :param queue: Multiprocessing queue object.
+        """
+        _logger.debug('{0} processing thread started.'.format(self.get_name()))
+
+        self._mqueue = mqueue
+
+        if self._queue_timeout < 0.01:
+            self._queue_timeout = 0.01
+        if self._queue_timeout > 2.0:
+            self._queue_timeout = 2.0
+
+        while True:
+
+            try:
+                self._process_counter += 1
+                task = queue.get(timeout=self._queue_timeout)  # Wait while looking for a QueueTask object.
+            except:
+                self.process_loop(self)  # Call the processing loop for module idle processing.
+                continue
+
+            # Check to see that task is a QueueTask object
+            if isinstance(task, QueueTask):
+
+                _logger.debug('{0} task id: {1}.'.format(self.get_name(), task.get_task_id()))
+
+                if task.get_task_id() == TASK_STOP_PROCESSING:
+                    _logger.debug('({0}) received stop signal, ending process handler.'.format(self.get_name()))
+                    break
+
+                # Process task.
+                self.process_task(task)
+
+            else:
+                _logger.debug('({0}) Received bad task object, discarding.'.format(self.get_name()))
+
+        _logger.debug('({0}) Module processing thread closed cleanly.'.format(self.get_name()))
+
+    def send_parent_task(self, qtask):
+        """
+        Send a QueueTask object to the parent process.
+        :param qtask: QueueTask object
+        :return:
+        """
+        self._mqueue.put(qtask)
 
 
 def __load_modules__(base_path=None, module_path='silentdune_client/modules'):

@@ -22,17 +22,16 @@ import argparse
 import gettext
 import logging
 import os
-import shutil
 import sys
 import subprocess
-from subprocess import check_output, CalledProcessError
+from subprocess import CalledProcessError
 
 from silentdune_client.modules import __load_modules__
 from silentdune_client.utils.configuration import ClientConfiguration
 from silentdune_client.utils.console import ConsoleBase
 from silentdune_client.utils.log import setup_logging
 from silentdune_client.utils.node_info import NodeInformation
-from silentdune_client.utils.misc import is_process_running, node_info_dump, which
+from silentdune_client.utils.misc import is_process_running, node_info_dump, which, rmdir
 
 try:
     from configparser import ConfigParser
@@ -74,7 +73,7 @@ class Installer(ConsoleBase):
         for mod in self.__modules:
             result = mod.prepare_config(self.__config)
 
-            if not result:
+            if result == False:  # If prepare_config() return None, we just want to continue.
                 _logger.error('Preparing configuration file items failed in module {0}.'.format(mod.get_name()))
                 return False
 
@@ -121,14 +120,14 @@ class Installer(ConsoleBase):
             #     path = '/lib/systemd/system/'
             # elif os.path.exists('/etc/systemd/system/'):  # Last resort location
             #     path = '/etc/systemd/system/'
-            #
-            # if not path:
-            #     self.cwriteline('[Error]', 'Unable to locate systemd service unit path.')
-            #     return False
-            #
 
-            # Just save to the systemd user defined location for now.
-            path = '/etc/systemd/system/'
+            # Just save to the systemd user defined location until we get a selinux serivce policy built.
+            if os.path.exists('/etc/systemd/system/'):
+                path = '/etc/systemd/system/'
+
+            if not path:
+                self.cwriteline('[Error]', 'Unable to locate systemd service unit path.')
+                return False
 
             self.service_out_file = os.path.join(path, 'sdc-firewall.service')
 
@@ -250,7 +249,7 @@ class Installer(ConsoleBase):
             if self.node_info.config_root is not None \
                     and os.path.exists(self.node_info.config_root) \
                     and os.path.realpath(self.node_info.config_root) != '/':
-                shutil.rmtree(self.node_info.config_root)
+                rmdir(self.node_info.config_root)
 
         self.cwriteline('[OK]', 'Finished cleaning up.')
 
@@ -281,7 +280,8 @@ class Installer(ConsoleBase):
         # Have each module do their pre install work now.
         #
         for mod in self.__modules:
-            if not mod.pre_install(self.node_info):
+            result = mod.pre_install(self.node_info)
+            if result is not None and result is False:
                 return False
 
         # The following code can only run if we are running under privileged account.
@@ -299,7 +299,8 @@ class Installer(ConsoleBase):
         # Have each module do their install work now.
         #
         for mod in self.__modules:
-            if not mod.install_module(self.node_info):
+            result = mod.install_module(self.node_info)
+            if result is not None and result is False:
                 return False
 
         # The following code can only run if we are running under privileged account.
@@ -315,7 +316,8 @@ class Installer(ConsoleBase):
 
         # Have each module do their post install work now.
         for mod in self.__modules:
-            if not mod.post_install(self.node_info):
+            result = mod.post_install(self.node_info)
+            if result is not None and result is False:
                 return False
 
         # Finally install and start the firewalls service.
@@ -357,7 +359,7 @@ def run():
     module_list = __load_modules__(base_path=base_path)
 
     # Setup program arguments.
-    parser = argparse.ArgumentParser(prog='sdc-install') 
+    parser = argparse.ArgumentParser(prog='sdc-install')
     parser.add_argument(_('--debug'), help=_('Enable debug output'), default=False, action='store_true')  # noqa
 
     # Loop through the module objects and add any argparse arguments.
@@ -368,7 +370,7 @@ def run():
 
     # Have each module validate arguments.
     for mod in module_list:
-        if not mod.validate_arguments(args):
+        if mod.validate_arguments(args) == False:  # If return value is None, we just want to continue.
             parser.print_help()
             exit(1)
 

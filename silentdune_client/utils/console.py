@@ -21,8 +21,6 @@
 import logging
 import sys
 
-import silentdune_client.utils.configuration
-
 _logger = logging.getLogger('sd-client')
 
 
