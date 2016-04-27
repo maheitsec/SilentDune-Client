@@ -65,6 +65,9 @@ class SilentDuneServerModule(modules.BaseModule):
     _node_bundle = None
     _bundle_machine_subsets = None
 
+    # Timed events.
+    _event_t = 0
+
     def __init__(self):
 
         # Set our module name
@@ -218,7 +221,7 @@ class SilentDuneServerModule(modules.BaseModule):
 
         return True
 
-    def install_module(self, node_info):
+    def install_module(self):
         """
         Virtual Override
         Register and download our bundle information from the server.
@@ -228,7 +231,7 @@ class SilentDuneServerModule(modules.BaseModule):
         if not self._sds_conn.connect_with_password(self._user, self._password):
             return False
 
-        if not self._register_node(node_info):
+        if not self._register_node():
             return False
 
         if not self._get_rule_bundle():
@@ -241,26 +244,31 @@ class SilentDuneServerModule(modules.BaseModule):
         # Note: It might be better to call ifconfig instead of using netifaces to get adapter info.
 
         # TODO: Download the bundle rules in the daemon process.
-        # if not self._download_bundleset(node_info):
-        #     return False
+        if not self._download_bundleset():
+            return False
+
+
+
+        if not self._write_rule_files():
+            return False
 
         return True
 
     def service_startup(self):
-        _logger.debug('{0} thread startup called'.format(self.get_name()))
+        _logger.debug('{0} module startup called'.format(self.get_name()))
         return True
 
     def service_shutdown(self):
-        _logger.debug('{0} thread shutdown called'.format(self.get_name()))
+        _logger.debug('{0} module shutdown called'.format(self.get_name()))
         return True
 
-    def process_loop(self, task):
+    def process_loop(self):
         # _logger.debug('{0} processing loop called'.format(self.get_name()))
 
-        time = self.get_ticks() * self.get_counter()
-
         # Every 10 seconds, send the firewall module a QueueTask
-        if time % 10 == 0.0:
+        if self._seconds_t > self._event_t and self._seconds_t % 4 == 0.0:
+            self._event_t = self._seconds_t
+
             _logger.debug('Sending {0} module a task.'.format(type(SilentDuneClientFirewallModule).__name__))
 
             task = QueueTask(TASK_FIREWALL_RELOAD_RULES,
@@ -270,13 +278,13 @@ class SilentDuneServerModule(modules.BaseModule):
 
             self.send_parent_task(task)
 
-    def _register_node(self, node_info):
+    def _register_node(self):
         """
         Contact the server to register this node with the server.
         """
 
         # Look for existing Node record first.
-        self._node, status_code = self._sds_conn.get_node_by_machine_id(node_info.machine_id)
+        self._node, status_code = self._sds_conn.get_node_by_machine_id(self._node_info.machine_id)
 
         if status_code != requests.codes.ok:
             return False
@@ -288,13 +296,13 @@ class SilentDuneServerModule(modules.BaseModule):
             self.cwrite('Registering Node...  ')
 
             node = Node(
-                platform=node_info.firewall_platform,
+                platform=self._node_info.firewall_platform,
                 os=platform.system().lower(),
                 dist=platform.dist()[0],
                 dist_version=platform.dist()[1],
                 hostname=socket.gethostname(),
                 python_version=sys.version.replace('\n', ''),
-                machine_id=node_info.machine_id,
+                machine_id=self._node_info.machine_id,
             )
 
             # Attempt to register this node on the SD server.
@@ -359,7 +367,7 @@ class SilentDuneServerModule(modules.BaseModule):
         self.cwriteline('[OK]', 'Node rule bundle successfully set.')
         return True
 
-    def _download_bundleset(self, node_info):
+    def _download_bundleset(self):
 
         self.cwrite('Downloading bundle set rules...')
 
@@ -369,14 +377,22 @@ class SilentDuneServerModule(modules.BaseModule):
             self.cwriteline('[Failed]', 'No bundle machine subsets found.')
             return False
 
-        files = self._sds_conn.write_bundle_chainsets(node_info.config_root, self._bundle_machine_subsets)
+        return True
+
+    def _write_rule_files(self):
+
+        files = self._sds_conn.write_bundle_to_file(self._node_info.config_root, self._bundle_machine_subsets)
 
         if len(files) == 0:
             return False
 
-        self.cwriteline('[OK]', 'Successfully downloaded bundle set rules.')
+        self.cwriteline('[OK]', 'Successfully wrote bundle set rules to file.')
 
-        if not node_info.root_user:
+        self._validate_rule_files(files)
+
+    def _validate_rule_files(self, files):
+
+        if not self._node_info.root_user:
             _logger.warning('Unable to validate rules, not running as privileged user.')
             return True
 
@@ -389,7 +405,7 @@ class SilentDuneServerModule(modules.BaseModule):
                 _logger.critical('Rule file does not exist.')
                 return False
 
-            cmd = '{0} --test < "{1}"'.format(node_info.iptables_restore, file)
+            cmd = '{0} --test < "{1}"'.format(self._node_info.iptables_restore, file)
 
             try:
                 check_output(cmd, shell=True)
@@ -399,3 +415,5 @@ class SilentDuneServerModule(modules.BaseModule):
         self.cwriteline('[OK]', 'Rule validation successfull.')
 
         return True
+
+

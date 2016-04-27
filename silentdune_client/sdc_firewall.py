@@ -49,32 +49,99 @@ def run():
         stopProcessing = False
         reload = False
 
+        _start_t = time.time()
+        _mod_check_t = 0
+
         def __init__(self, *args, **kwargs):
 
             self._args = kwargs.pop('args', None)
 
             super(SDCDaemon, self).__init__(*args, **kwargs)
 
-        # def process_tasks(self, qu):
-        #
-        #     _logger.debug('Processing queue thread started.')
-        #
-        #     while True:
-        #
-        #         try:
-        #             task = qu.get(1.0)
-        #         except multiprocessing.TimeoutError:
-        #             continue
-        #
-        #         if task:
-        #
-        #             time.sleep(0.1)
-        #
-        #         else:
-        #             _logger.debug('Got signal that we are done processing, closing processing queue thread.')
-        #             break
-        #
-        #     _logger.debug('Processing queue thread closed cleanly.')
+        def startup_modules(self):
+
+            # Get the path where this file is located.
+            app_path = os.path.split(os.path.realpath(__file__))[0]
+            # Get our package path and package name
+            base_path, package_name = os.path.split(app_path)
+
+            # Get loadable module list
+            mods = modules.__load_modules__(base_path=base_path)
+
+            # Have each module do their startup work now.
+            for mod in mods:
+                result = mod.service_startup()
+                if result is not None and result is False:
+                    _logger.critical('Module ({0}) failed during startup.'.format(mod.get_name))
+                    sys.exit(1)
+
+            pmanager = Manager()
+            mqueue = pmanager.Queue()
+
+            # Keep the created child processes.
+            cprocs = dict()   # Dictionary of module process handlers.
+            cqueues = dict()  # Dictionary of module Queue objects.
+            mlist = list()    # List of module names.
+
+            # Get list of module names
+            for mod in mods:
+                mlist.append(mod.get_name())
+
+            # Setup thread for modules wanting a processing thread.
+            for mod in mods:
+                name = mod.get_name()
+
+                cprocs[name] = None  # Add a place holder for the module process
+
+                if mod.wants_processing_thread:
+                    _logger.debug('Initializing thread for {0}.'.format(name))
+
+                    cqueues[name] = multiprocessing.Queue()
+                    cprocs[name] = multiprocessing.Process(
+                        target=mod.process_handler, args=(cqueues[name], mqueue, mlist))
+                    cprocs[name].start()
+
+            return mods, pmanager, mqueue, cprocs, cqueues, mlist
+
+        def check_module_state(self, mods, cprocs, force=False):
+            """
+            Check each module that has a thread and make sure it is still alive.
+            :param mods:
+            :return: False if all threads are running fine, True if failed module.
+            """
+
+            # We only want to do a check once a minute.
+            time_t = int((time.time() - self._start_t))
+
+            if (time_t > self._mod_check_t and time_t % 60.0 == 0.0) or force:
+                self._mod_check_t = int((time.time() - self._start_t))
+
+                # Check to see that module process threads are still running.
+                _logger.debug('Checking module threads.')
+                for mod in mods:
+                    if mod.get_name() in cprocs and cprocs[mod.get_name()]:
+                        if not cprocs[mod.get_name()].is_alive():
+                            # TODO: Maybe restart the module?
+                            _logger.critical('{0} module has unexpectedly stopped.'.format(mod.get_name()))
+                            return True
+
+            return False
+
+        def terminate_modules(self, mods, cprocs, cqueues):
+            """
+            Shutdown modules.
+            """
+            for mod in mods:
+
+                mod.service_shutdown()
+                name = mod.get_name()
+
+                if cprocs[name] and cprocs[name].is_alive():
+                    _logger.debug('Signalling {0} module to stop processing.'.format(name))
+                    cqueues[name].put(modules.QueueTask(modules.TASK_STOP_PROCESSING))
+                    cqueues[name].close()
+                    cqueues[name].join_thread()
+                    cprocs[name].join()
 
         def run(self):
 
@@ -83,13 +150,9 @@ def run():
             signal.signal(signal.SIGTERM, signal_term_handler)
             signal.signal(signal.SIGHUP, signal_hup_handler)
 
-            _logger.info('Beginning firewall startup.')
+            _logger.info('Starting firewall service.')
 
-            # Get the path where this file is located.
-            app_path = os.path.split(os.path.realpath(__file__))[0]
-            # Get our package path and package name
-            base_path, package_name = os.path.split(app_path)
-
+            # This loop allows for restarting and reloading the configuration after a SIGHUP signal has been received.
             while True:
 
                 # Reset loop controllers
@@ -99,92 +162,44 @@ def run():
                 # Read the local configuration file.
                 self._config = ClientConfiguration(self._args.config).read_config()
 
-                # Get loadable module list
-                mods = modules.__load_modules__(base_path=base_path)
+                mods, pmanager, mqueue, cprocs, cqueues, mlist = self.startup_modules()
 
-                # Have each module do their startup work now.
-                for mod in mods:
-                    result = mod.service_startup()
-                    if result is not None and result is False:
-                        _logger.critical('Module ({0}) failed during startup.'.format(mod.get_name))
-                        sys.exit(1)
-
-                pmanager = Manager()
-                mqueue = pmanager.Queue()
-
-                # Keep the created child processes.
-                cprocs = dict()
-                cqueues = dict()
-
-                # Setup thread for modules wanting a processing thread.
-                for mod in mods:
-                    name = mod.get_name()
-
-                    cprocs[name] = None  # Add a place holder for the module process
-
-                    if mod.wants_processing_thread:
-                        _logger.debug('Initializing thread for {0}.'.format(name))
-
-                        cqueues[name] = multiprocessing.Queue()
-                        cprocs[name] = multiprocessing.Process(
-                            target=mod.process_handler, args=(cqueues[name], mqueue, ))
-                        cprocs[name].start()
-
-                counter = 50
-
-                # loop until we get an external signal
+                # RUn main loop until we get an external signal.
                 _logger.debug('Starting main processing loop.')
                 while not self.stopProcessing:
 
-                    # Check management queue for any QueueTask task
+                    if self.check_module_state(mods, cprocs):
+                        self.stopProcessing = True
+                        break
+
+                    # Check manage queue for any QueueTask object.
                     try:
                         task = mqueue.get_nowait()
-                        _logger.debug('Main process: task from {0} found.'.format(task.get_src_name()))
-                        _logger.debug('Sending task to {0}'.format(task.get_dest_name()))
+                        _logger.debug('Forwarding task ({0}) from {1} to {2}'.format(
+                            task.get_task_id(), task.get_src_name(), task.get_dest_name()))
 
                         if task:
                             # Find the destination module and send task to it.
-                            if not cqueues[task.get_dest_name()]:
-                                _logger.error('QueueTask object has unknown destination module.')
+                            if not task.get_dest_name() or not cqueues[task.get_dest_name()]:
+                                _logger.error('Task from {0} has unknown destination.'.format(task.get_src_name()))
 
                             cqueues[task.get_dest_name()].put(task)
                     except:
                         pass
 
-                    time.sleep(0.01)
-
-                    counter -= 1
-
-                    if not counter:
-                        _logger.info('Run loop.')
-                        counter = 50
-
-                    # Check to see that module processes are still running.
-                    for mod in mods:
-                        if mod.get_name() in cprocs and cprocs[mod.get_name()]:
-                            if not cprocs[mod.get_name()].is_alive():
-                                # TODO: Maybe restart the module?
-                                _logger.critical('{0} module has unexpectedly stopped.'.format(mod.get_name()))
-                                self.stopProcessing = True
-                                break
+                    # Sleep.
+                    time.sleep(0.25)
 
                 # Stop all module processing threads
-                _logger.debug('Ending main processing loop.')
+                _logger.debug('Shutting firewall service down.')
 
-                for mod in mods:
-                    name = mod.get_name()
-                    _logger.debug('Stopping {0} thread.'.format(name))
-
-                    if cprocs[name] and cprocs[name].is_alive():
-                        _logger.debug('Signalling {0} module to stop processing.'.format(name))
-                        cqueues[name].put(modules.QueueTask(modules.TASK_STOP_PROCESSING))
-                        cqueues[name].close()
-                        cqueues[name].join_thread()
-                        cprocs[name].join()
+                self.terminate_modules(mods, cprocs, cqueues)
 
                 # If we are not reloading, just shutdown.
                 if not self.reload:
                     break
+
+                _logger.debug('Reloading firewall.')
 
             _logger.info('Firewall shutdown complete.')
 
@@ -194,13 +209,13 @@ def run():
     def signal_term_handler(signal, frame):
 
         if not _daemon.stopProcessing:
-            _logger.warning("Firewall: Got SIGTERM, quitting.")
+            _logger.debug('Received SIGTERM signal.')
         _daemon.stopProcessing = True
 
     def signal_hup_handler(signal, frame):
 
         if not _daemon.reload:
-            _logger.warning("Firewall: Got SIGHUP, reloading.")
+            _logger.debug('Received SIGHUP signal.')
         _daemon.reload = True
         _daemon.stopProcessing = True
 

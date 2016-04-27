@@ -236,15 +236,15 @@ class IPChain(JsonObject):
     def get_chain_prefix(self, name):
 
         if name.lower() == u'prerouting':
-            return u'PRE'
+            return u'PR'
         if name.lower() == u'postrouting':
-            return u'POST'
+            return u'PO'
         if name.lower() == u'forward':
-            return u'FWD'
+            return u'FW'
         if name.lower() == u'input':
             return u'IN'
         if name.lower() == u'output':
-            return u'OUT'
+            return u'OT'
 
         return None
 

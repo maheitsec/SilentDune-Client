@@ -306,9 +306,9 @@ class SDSConnection (ConsoleBase):
 
         return ol, status_code
 
-    def write_bundle_chainsets(self, path, cs):
+    def write_bundle_to_file(self, path, cs):
         """
-        Write the chainset data to a file.
+        Write the bundle machine set data to a file.
         This process starts by looping through each of the iptable table names, then calling o.write_chains() to
         setup the custom iptables chain names for that table.  Then o.write() is called to write out the rules for
         that table. Chain names are defined by the built-in chain name, slot number and pk id of the IPRing object.
@@ -320,9 +320,17 @@ class SDSConnection (ConsoleBase):
             _logger.error('Array of chainset objects not valid.')
             return files
 
+        # Write out machine sets to individual files with the slot number as the name.
+        for ms in cs:
+            file = os.path.join(path, u'{0}.bundle'.format(ms.slot))
+
+            _logger.debug('Writting set {0} rules to -> {1}'.format(ms.slot, file))
+            with open(file, 'w') as handle:
+                handle.write('{0}\n'.format(ms.to_json()))
+
         for v in {u'ipv4', u'ipv6'}:
 
-            file = os.path.join(path, u'{0}_rules'.format(v))
+            file = os.path.join(path, u'{0}.rules'.format(v))
 
             _logger.debug('Writting {0} rules to -> {1}'.format(v, file))
 

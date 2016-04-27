@@ -19,11 +19,13 @@
 #
 
 import logging
-
+import os
 import pkg_resources
-
+import subprocess
 
 from silentdune_client import modules
+
+from subprocess import check_output, CalledProcessError
 
 _logger = logging.getLogger('sd-client')
 
@@ -62,24 +64,89 @@ class SilentDuneClientFirewallModule(modules.BaseModule):
         Virtual Override
         """
 
-        # TODO: Look for existing firewall rule files in /etc/silentdune and load them into the kernel.
 
 
         return True
 
     def service_startup(self):
-        _logger.debug('{0} thread startup called'.format(self.get_name()))
+
+        _logger.debug('{0} module startup called'.format(self.get_name()))
+        self.restore_iptables()
+
         return True
 
     def service_shutdown(self):
-        _logger.debug('{0} thread shutdown called'.format(self.get_name()))
-        return True
 
-    def process_loop(self, task):
+        _logger.debug('{0} thread shutdown called'.format(self.get_name()))
+        self.save_iptables()
+
+    def process_loop(self):
         # _logger.debug('{0} processing loop called'.format(self.get_name()))
+
+        # TODO: Things to do occasionally; Hash rule files and compare to hashes saved on server to look for tampering.
+
         pass
 
     def process_task(self, task):
 
         if task:
             _logger.debug('Received task {0} from {1}.'.format(task.get_task_id(), task.get_src_name()))
+
+    def restore_iptables(self):
+        """
+        Load the iptables save file and load it into the kernel.
+        This is only called on startup.
+        """
+
+        # Load rule files into kernel
+        for v in {u'ipv4', u'ipv6'}:
+
+            file = os.path.join(self._node_info.config_root, u'{0}.rules'.format(v))
+            if os.path.exists(file):
+                try:
+                    with open(file) as handle:
+                        data = handle.read()
+
+                    p = subprocess.Popen([self._node_info.iptables_restore, '-c'], stdin=subprocess.PIPE)
+                    p.communicate(data)
+                    result = p.wait()
+
+                    if result:
+                        _logger.error('iptables-restore reported an error loading data.')
+
+                except ValueError:
+                    _logger.error('Invalid arguments passed to iptables-restore.')
+                except OSError:
+                    _logger.error('Loading IPv4 rules into kernel failed.')
+            else:
+                _logger.error('Rules file ({0}) not found.'.format(file))
+
+                # TODO: The SD Server module should be notified if there is any error loading a rule file.
+
+    def save_iptables(self):
+        """
+        Dump the iptables information from the kernel and save it to the restore file.
+        This is only called on shutdown.
+        """
+
+        # Load rule files into kernel
+        for v in {u'ipv4', u'ipv6'}:
+
+            file = os.path.join(self._node_info.config_root, u'{0}.rules.2'.format(v))
+            try:
+                p = subprocess.Popen([self._node_info.iptables_save, '-c'], stdout=subprocess.PIPE)
+                data = p.communicate()[0]
+                result = p.wait()
+
+                if result:
+                    _logger.error('iptables-save reported an error.')
+                else:
+                    with open(file, 'w') as handle:
+                        handle.write(data)
+
+            except ValueError:
+                _logger.error('Invalid arguments passed to iptables-save.')
+            except OSError:
+                _logger.error('Saving IPv4 rules from kernel failed.')
+
+                # TODO: The SD Server module should be notified if there is any error saving a rule file.

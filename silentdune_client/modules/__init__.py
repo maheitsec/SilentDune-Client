@@ -19,11 +19,12 @@
 #
 
 import logging
-import multiprocessing
+import grp
 import os
+import pwd
 import time
 
-
+from silentdune_client.utils.node_info import NodeInformation
 from silentdune_client.utils.console import ConsoleBase
 from silentdune_client.utils.module_loading import import_by_str
 from silentdune_client.utils.exceptions import ModuleLoadError
@@ -32,10 +33,6 @@ _logger = logging.getLogger('sd-client')
 
 # Parent to Child task queue IDs
 TASK_STOP_PROCESSING = 0
-
-# Child to Parent task queue IDs
-TASK_IS_MODULE_AVAIL = 100  # As the parent process if another module is available.
-TASK_SEND_TASK_TO_MODULE = 110  # Send a QueueTask object to another module
 
 
 class QueueTask(object):
@@ -89,18 +86,17 @@ class BaseModule(ConsoleBase):
     # Parent process management queue.  This is only valid if we are using a processing thread.
     _mqueue = None
 
-    # Delay to wait for a message from the parent.  After timeout has expired, process_loop is called.
-    _queue_timeout = 1.0  # Min = 0.01, Max = 2.0.
+    # List of loaded module names, useful to see if another module has been loaded.
+    _mlist = None
 
-    # Process counter, this value is incremented by one each time the process_loop method is called.
-    # The _queue_timeout value and the _process_counter can be used together to determine roughly how
-    # much time has passed. See self.get_ticks()
-    #
-    #    Number of times process_loop is called per second = ticks = ((10.0 / _queue_timeout) / 10.0)
-    #    Total seconds = time = (ticks * _process_counter)
-    #    Do something every 20 seconds: time % 20
-    #
-    _process_counter = 0
+    # Delay in seconds to wait for a message from the parent.  After timeout has expired, process_loop is called.
+    _queue_timeout = 1.0  # Min = 0.01, Max = 10.0.
+
+    # _start_t and _seconds_t can be used to for timed events.
+    _start_t = time.time()
+    _seconds_t = 0                   # Number of seconds that have passed since this process started.
+
+    _node_info = NodeInformation()
 
     """
     Installer Virtual Methods
@@ -118,18 +114,6 @@ class BaseModule(ConsoleBase):
         :return: module version
         """
         return self._version
-
-    def get_ticks(self):
-        """
-        Return the number of times per second the process_loop will be called.
-        """
-        return (10.0 / self._queue_timeout) / 10.0
-
-    def get_counter(self):
-        """
-        Return the self._process_counter value.
-        """
-        return self._process_counter
 
     def add_installer_arguments(self, parser):
         pass
@@ -170,7 +154,7 @@ class BaseModule(ConsoleBase):
         """
         pass
 
-    def pre_install(self, node_info):
+    def pre_install(self):
         """
         Called by the installer before the formal install process starts.
         :param installer: The Installer object.
@@ -178,7 +162,7 @@ class BaseModule(ConsoleBase):
         """
         pass
 
-    def install_module(self, node_info):
+    def install_module(self):
         """
         Called by the installer during the formal install process.
         :param installer: The Installer object.
@@ -186,7 +170,7 @@ class BaseModule(ConsoleBase):
         """
         pass
 
-    def post_install(self, node_info):
+    def post_install(self):
         """
         Called by the installer after the formal install process has completed.
         :param installer: The Installer object.
@@ -194,7 +178,7 @@ class BaseModule(ConsoleBase):
         """
         pass
 
-    def uninstall_module(self, node_info):
+    def uninstall_module(self):
         """
         Called by the installer during an uninstall process.
         :param installer: The Installer object.
@@ -238,7 +222,7 @@ class BaseModule(ConsoleBase):
         """
         pass
 
-    def process_handler(self, queue, mqueue):
+    def process_handler(self, queue, mqueue, mlist):
         """
         !!! Please do not override this method, override the process_loop method !!!
         Called during the service loop.
@@ -246,20 +230,19 @@ class BaseModule(ConsoleBase):
         """
         _logger.debug('{0} processing thread started.'.format(self.get_name()))
 
+        # Save parent's manager queue.
         self._mqueue = mqueue
 
-        if self._queue_timeout < 0.01:
-            self._queue_timeout = 0.01
-        if self._queue_timeout > 2.0:
-            self._queue_timeout = 2.0
+        # Save list of all loaded module names.
+        self._mlist = mlist
 
         while True:
 
             try:
-                self._process_counter += 1
+                self._seconds_t = int(time.time() - self._start_t)
                 task = queue.get(timeout=self._queue_timeout)  # Wait while looking for a QueueTask object.
             except:
-                self.process_loop(self)  # Call the processing loop for module idle processing.
+                self.process_loop()  # Call the processing loop for module idle processing.
                 continue
 
             # Check to see that task is a QueueTask object

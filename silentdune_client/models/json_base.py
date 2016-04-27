@@ -47,7 +47,7 @@ class JsonObject(object):
                 # print('{0} : {1}'.format(key, value))
 
     def to_json(self):
-        return json.dumps(self, default=lambda o: o.__dict__, sort_keys=True)
+        return json.dumps(self, default=lambda o: o.__dict__, indent=4)
 
     def to_dict(self):
         data = dict()
