@@ -59,7 +59,7 @@ class SilentDuneClientFirewallModule(modules.BaseModule):
         except:
             self._version = 'unknown'
 
-    def install_module(self, node_info):
+    def install_module(self):
         """
         Virtual Override
         """
@@ -79,6 +79,8 @@ class SilentDuneClientFirewallModule(modules.BaseModule):
 
         _logger.debug('{0} thread shutdown called'.format(self.get_name()))
         self.save_iptables()
+
+        # TODO: Flush iptables rules and delete user defined chains. iptables -F; iptables --delete-chain
 
     def process_loop(self):
         # _logger.debug('{0} processing loop called'.format(self.get_name()))

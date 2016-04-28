@@ -56,7 +56,7 @@ class SDSConnection (ConsoleBase):
     def _build_base_url(self):
 
         # Build base URL
-        self._base_url = 'https://' if not self._no_tls else 'http://'
+        self._base_url = 'http://' if self._no_tls else 'https://'
         self._base_url += self._server
         self._base_url += '' if self._port == -1 else ':{0}'.format(self._port)
 
@@ -141,6 +141,7 @@ class SDSConnection (ConsoleBase):
 
         except Exception:
             _logger.error('CSRF token request attempt failed.')
+            raise
             return False
 
         try:

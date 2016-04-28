@@ -33,6 +33,7 @@ from silentdune_client.models.node import Node, NodeBundle
 from silentdune_client.modules import QueueTask
 from silentdune_client.modules.comm.sd_server.connection import SDSConnection
 from silentdune_client.modules.firewall.manager import SilentDuneClientFirewallModule, TASK_FIREWALL_RELOAD_RULES
+from silentdune_client.modules.comm.sd_server.auto_rules import create_server_conn_rule
 from silentdune_client.utils.misc import is_valid_ipv4_address, is_valid_ipv6_address
 
 _logger = logging.getLogger('sd-client')
@@ -247,7 +248,7 @@ class SilentDuneServerModule(modules.BaseModule):
         if not self._download_bundleset():
             return False
 
-
+        self._insert_server_connection_rule()
 
         if not self._write_rule_files():
             return False
@@ -256,10 +257,25 @@ class SilentDuneServerModule(modules.BaseModule):
 
     def service_startup(self):
         _logger.debug('{0} module startup called'.format(self.get_name()))
+
+        server = self._config.get(self._config_section, 'server')
+        port = self._config.get(self._config_section, 'port')
+        no_tls = False if self._config.get(self._config_section, 'use_tls').lower() == 'yes' else True
+
+        self._sds_conn = SDSConnection(server, no_tls, port)
+        _logger.info('Server -> {0}:{1} tls: {2}'.format(server, port, no_tls))
+
+        # TODO: Change this up to use something other than a user and password to connect with.
+
+        if not self._sds_conn.connect_with_password('tester', '12341234'):
+            _logger.debug('Failed to connect with Silent Dune server.')
+            return False
+
         return True
 
     def service_shutdown(self):
         _logger.debug('{0} module shutdown called'.format(self.get_name()))
+
         return True
 
     def process_loop(self):
@@ -379,18 +395,45 @@ class SilentDuneServerModule(modules.BaseModule):
 
         return True
 
+    def _insert_server_connection_rule(self):
+        """
+        Create machine subset to allow this node to access the Silent Dune server and then insert it into the bundle.
+        :return:
+        """
+        ms = create_server_conn_rule(self._server, self._port)
+
+        ol = list()
+        ol.append(ms)
+
+        for ms in self._bundle_machine_subsets:
+            ol.append(ms)
+
+        self._bundle_machine_subsets = ol
+
     def _write_rule_files(self):
+        """
+        Write to file bundle rules in iptables save file format.
+        :return:
+        """
 
         files = self._sds_conn.write_bundle_to_file(self._node_info.config_root, self._bundle_machine_subsets)
 
         if len(files) == 0:
+            self.cwriteline('[Error]', 'Failed to write bundle set to file.')
             return False
 
         self.cwriteline('[OK]', 'Successfully wrote bundle set rules to file.')
 
         self._validate_rule_files(files)
 
+        return True
+
     def _validate_rule_files(self, files):
+        """
+        Validate multiple iptables rule save files.
+        :param files: List of path+filenames to run iptables-restore --test on.
+        :return:
+        """
 
         if not self._node_info.root_user:
             _logger.warning('Unable to validate rules, not running as privileged user.')
@@ -408,9 +451,12 @@ class SilentDuneServerModule(modules.BaseModule):
             cmd = '{0} --test < "{1}"'.format(self._node_info.iptables_restore, file)
 
             try:
+                # TODO: Change this to a process.call and just look at the return code.
                 check_output(cmd, shell=True)
             except CalledProcessError:
                 self.cwriteline('[Failed]', 'Rule set iptables test failed "{0}"'.format(file))
+                # TODO: Enable this return later.
+                # return False
 
         self.cwriteline('[OK]', 'Rule validation successfull.')
 

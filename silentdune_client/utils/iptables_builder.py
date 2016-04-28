@@ -22,44 +22,44 @@ from silentdune_client.models.iptables_rules import IPJumpOptions, IPJump, IPMat
     IPMatch, IPRule, IPRing, IPChain, IPMachineSubset
 
 
-def get_machine_subset(name, slot, chains, platform='iptables', id=0):
+def get_machine_subset(name, slot, chains, platform='iptables', _id=0):
     """
     Return an IPMachineSubset object
     :param name: Name for this group of rules
     :param slot: Slot ID for this group
     :param chains: List of IPChains objects
     :param platform: Must be 'iptables'
-    :param id: Id for this object
+    :param _id: Id for this object
     :return:
     """
-    obj = IPMachineSubset({'name': name, 'slot': slot, 'platform': platform, 'id': id})
+    obj = IPMachineSubset({'name': name, 'slot': slot, 'platform': platform, 'id': _id})
     obj.chains = chains
     return obj
 
 
-def get_chain(name, rings, id=0):
+def get_chain(name, rings, _id=0):
     """
 
     :param name: iptables table name, must be 'filter', 'nat', 'mangle', 'raw' or 'security'
     :param rings: List of IPRing objects
-    :param id: Id for this object
+    :param _id: Id for this object
     :return:
     """
-    obj = IPChain({'name': name, 'id': id})
+    obj = IPChain({'name': name, 'id': _id})
     obj.rings = rings
     return obj
 
 
-def get_ring(name, version, rules, id=0):
+def get_ring(name, version, rules, _id=0):
     """
 
     :param name: iptables chain name, must be 'INPUT', 'OUTPUT', 'PREROUTING', 'POSTROUTING', or 'FORWARD'
     :param version: Transport version, must be 'ipv4' or 'ipv6'
     :param rules: List of IPRule objects
-    :param id: Id for this object
+    :param _id: Id for this object
     :return:
     """
-    obj = IPRing({'name': name, 'version': version, 'id': id})
+    obj = IPRing({'name': name, 'version': version, 'id': _id})
     obj.rules = rules
     return obj
 
@@ -67,7 +67,7 @@ def get_ring(name, version, rules, id=0):
 def get_rule(desc=None, ifacein_name=None, ifacein_invert=None, ifaceout_name=None,
              ifaceout_invert=None, ip_protocol_name=None, ip_protocol_invert=None, source_address=None,
              source_mask=None, source_invert=None, dest_address=None, dest_mask=None, dest_invert=None,
-             fragment=None, fragment_invert=None, enabled=True, sortId=0, matches=None, jump=None, id=0):
+             fragment=None, fragment_invert=None, enabled=True, sortId=0, matches=None, jump=None, _id=0):
     """
     Return an IPRule object
     :param matches: List of IPMatch objects
@@ -91,57 +91,57 @@ def get_rule(desc=None, ifacein_name=None, ifacein_invert=None, ifaceout_name=No
                   'fragment_invert': fragment_invert,
                   'enabled': enabled,
                   'sortId': sortId,
-                  'id': id})
+                  'id': _id})
     obj.matches = matches
     obj.jump = jump
     return obj
 
 
-def get_match(name, options, id=0):
+def get_match(name, options, _id=0):
     """
 
     :param name: Match name
     :param options: List of IPMatchOptions objects
-    :param id: Id for this object
+    :param _id: Id for this object
     :return: IPMatch object
     """
-    obj = IPMatch({'name': name, 'id': id})
+    obj = IPMatch({'name': name, 'id': _id})
     obj.options = options
     return obj
 
 
-def get_match_option(option, value, invert=False, sortId=0, id=0):
+def get_match_option(option, value, invert=False, sort_id=0, _id=0):
     """
 
     :param option: Option name
     :param value: Option value
     :param invert: Invert option meaning
-    :param sortId: sorting value for this object
-    :param id: Id for this object
+    :param sort_id: sorting value for this object
+    :param _id: Id for this object
     :return: IPMatchOptions object
     """
-    return IPMatchOptions({'option': option, 'value': value, 'invert': invert, 'sortId': sortId, 'id': id})
+    return IPMatchOptions({'option': option, 'value': value, 'invert': invert, 'sortId': sort_id, 'id': _id})
 
 
-def get_jump(target='ACCEPT', params=None, id=0):
+def get_jump(target='ACCEPT', params=None, _id=0):
     """
     Return an IPJump object
     :param target: Jump target value.
     :param params: IPJumpOptions object
-    :param id: Id for this object
+    :param _id: Id for this object
     :return: IPJump object
     """
-    obj = IPJump({'id': id, 'target': target})
+    obj = IPJump({'id': _id, 'target': target})
     obj.params = params
     return obj
 
 
-def get_jump_option(name, value=None, id=0):
+def get_jump_option(name, value=None, _id=0):
     """
     Return a IPJumpOptions object
-    :param name:
-    :param value:
-    :param id:
+    :param name: Jump option name
+    :param value: Jump option value
+    :param _id: Id for this object
     :return: IPJumpOptions object
     """
-    return IPJumpOptions({'name': name, 'value': value, 'id': id})
+    return IPJumpOptions({'name': name, 'value': value, 'id': _id})

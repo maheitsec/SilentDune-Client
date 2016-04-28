@@ -32,8 +32,8 @@ def create_server_conn_rule(addr, port):
 
     # Example: a = ipb.get_match(name='state', options=[ipb.get_match_option('--state', 'ESTABLISHED')])
 
-    ms = ipb.get_machine_subset(
-        'Allow acess to Silent Dune server.',
+    return ipb.get_machine_subset(
+        'Allow access to Silent Dune server.',
         10,
         [
             ipb.get_chain(
@@ -44,23 +44,20 @@ def create_server_conn_rule(addr, port):
                         'ipv4',
                         [
                             ipb.get_rule(
-                                ip_protocol_name='tcp', source_address=addr, matches=
-                                [
+                                ip_protocol_name='tcp', source_address=addr, matches=[
                                     ipb.get_match('state', [ipb.get_jump_option('--state', 'ESTABLISHED'), ], ),
                                     ipb.get_match('tcp', [ipb.get_match_option('--sport', port), ], ),
                                 ],
                                 jump=ipb.get_jump(target='ACCEPT')
-                            )
-                        ]
-                    ),
+                            )]),
                     ipb.get_ring(
                         'output',
                         'ipv4',
                         [
                             ipb.get_rule(
-                                ip_protocol_name='tcp', source_address=addr, matches=
-                                [
-                                    ipb.get_match('state', [ipb.get_jump_option('--state', 'NEW,ESTABLISHED'), ], ),
+                                ip_protocol_name='tcp', dest_address=addr, matches=[
+                                    ipb.get_match('state',
+                                                  [ipb.get_jump_option('--state', 'NEW,ESTABLISHED'), ], ),
                                     ipb.get_match('tcp', [ipb.get_match_option('--dport', port), ], ),
                                 ],
                                 jump=ipb.get_jump(target='ACCEPT')

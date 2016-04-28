@@ -368,12 +368,21 @@ class IPRule(JsonObject):
             stream.write(s)
 
         if self.source_address:
-            s = u' -s{0} {1}/{2}'.format(u' !' if self.source_invert is True
-                                         else u'', self.source_address, self.source_mask)
+            if self.source_mask:
+                s = u' -s{0} {1}/{2}'.format(u' !' if self.source_invert is True
+                                             else u'', self.source_address, self.source_mask)
+            else:
+                s = u' -s{0} {1}'.format(u' !' if self.source_invert is True
+                                             else u'', self.source_address)
             stream.write(s)
 
         if self.dest_address:
-            s = u' -d{0} {1}/{2}'.format(u' !' if self.dest_invert is True else u'', self.dest_address, self.dest_mask)
+            if self.dest_mask:
+                s = u' -d{0} {1}/{2}'.format(u' !' if self.dest_invert is True
+                                             else u'', self.dest_address, self.dest_mask)
+            else:
+                s = u' -d{0} {1}'.format(u' !' if self.dest_invert is True
+                                             else u'', self.dest_address)
             stream.write(s)
 
         if self.matches is not None:  # Call child objects write method.
@@ -435,8 +444,9 @@ class IPJump(JsonObject):
         s = u' -j {0}'.format(self.target)
         stream.write(s)
 
-        for o in iter(self.params):  # Call child objects write method.
-            o.write(stream)
+        if self.params:
+            for o in iter(self.params):  # Call child objects write method.
+                o.write(stream)
 
 
 class IPJumpOptions(JsonObject):

@@ -280,7 +280,7 @@ class Installer(ConsoleBase):
         # Have each module do their pre install work now.
         #
         for mod in self.__modules:
-            result = mod.pre_install(self.node_info)
+            result = mod.pre_install()
             if result is not None and result is False:
                 return False
 
@@ -299,7 +299,7 @@ class Installer(ConsoleBase):
         # Have each module do their install work now.
         #
         for mod in self.__modules:
-            result = mod.install_module(self.node_info)
+            result = mod.install_module()
             if result is not None and result is False:
                 return False
 
@@ -316,7 +316,7 @@ class Installer(ConsoleBase):
 
         # Have each module do their post install work now.
         for mod in self.__modules:
-            result = mod.post_install(self.node_info)
+            result = mod.post_install()
             if result is not None and result is False:
                 return False
 
@@ -384,7 +384,7 @@ def run():
 
         # Have each module do their uninstall work now.
         for mod in module_list:
-            mod.uninstall_module(i)
+            mod.uninstall_module()
 
         i.clean_up()
 

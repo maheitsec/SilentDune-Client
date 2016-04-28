@@ -70,6 +70,7 @@ def run():
 
             # Have each module do their startup work now.
             for mod in mods:
+                mod.set_config(self._config)  # Set the configuration information in the module.
                 result = mod.service_startup()
                 if result is not None and result is False:
                     _logger.critical('Module ({0}) failed during startup.'.format(mod.get_name))

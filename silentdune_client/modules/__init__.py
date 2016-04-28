@@ -154,6 +154,12 @@ class BaseModule(ConsoleBase):
         """
         pass
 
+    def set_config(self, config):
+        """
+        Do not override this method
+        """
+        self._config = config
+
     def pre_install(self):
         """
         Called by the installer before the formal install process starts.
