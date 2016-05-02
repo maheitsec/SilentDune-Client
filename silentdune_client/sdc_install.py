@@ -194,6 +194,9 @@ class Installer(ConsoleBase):
         :return: True if successful, otherwise False.
         """
 
+        if not self.node_info.previous_firewall_service:
+            return True
+
         # Check to see if the previous firewall service is running.
         if not is_process_running(self.node_info.previous_firewall_service):
             _logger.info('The current firewall service does not seem to be running.')

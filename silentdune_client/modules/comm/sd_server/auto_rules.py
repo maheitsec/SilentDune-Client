@@ -19,48 +19,65 @@
 #
 
 
-from silentdune_client.utils import iptables_builder as ipb
+from silentdune_client.builders import iptables as ipt
+from silentdune_client.utils.misc import is_valid_ipv4_address, is_valid_ipv6_address
 
 
-def create_server_conn_rule(addr, port):
+def create_tcp_server_conn_rule(addr, port, transport=ipt.TRANSPORT_AUTO, desc=''):
     """
     Create a rule that allows access to the given addr and port.
-    :param addr:
+    :param addr: IP address, not host name.
     :param port:
     :return:
     """
 
-    # Example: a = ipb.get_match(name='state', options=[ipb.get_match_option('--state', 'ESTABLISHED')])
+    # Example: a = ipt.get_match(name='state', options=[ipt.get_match_option('--state', 'ESTABLISHED')])
 
-    return ipb.get_machine_subset(
-        'Allow access to Silent Dune server.',
+    if transport == ipt.TRANSPORT_AUTO:
+        if is_valid_ipv6_address(addr):
+            transport = ipt.TRANSPORT_IPV6
+        elif is_valid_ipv4_address(addr):
+            transport = ipt.TRANSPORT_IPV4
+        else:
+            raise ValueError
+    elif transport == ipt.TRANSPORT_IPV4:
+        if not is_valid_ipv4_address(addr):
+            raise ValueError
+    elif transport == ipt.TRANSPORT_IPV6:
+        if not is_valid_ipv6_address(addr):
+            raise ValueError
+    else:
+        raise ValueError
+
+    return ipt.get_machine_subset(
+        desc,
         10,
         [
-            ipb.get_chain(
+            ipt.get_chain(
                 'filter',
                 [
-                    ipb.get_ring(
+                    ipt.get_ring(
                         'input',
-                        'ipv4',
+                        transport,
                         [
-                            ipb.get_rule(
+                            ipt.get_rule(
                                 ip_protocol_name='tcp', source_address=addr, matches=[
-                                    ipb.get_match('state', [ipb.get_jump_option('--state', 'ESTABLISHED'), ], ),
-                                    ipb.get_match('tcp', [ipb.get_match_option('--sport', port), ], ),
+                                    ipt.get_match('state', [ipt.get_jump_option('--state', 'ESTABLISHED'), ], ),
+                                    ipt.get_match('tcp', [ipt.get_match_option('--sport', port), ], ),
                                 ],
-                                jump=ipb.get_jump(target='ACCEPT')
+                                jump=ipt.get_jump(target='ACCEPT')
                             )]),
-                    ipb.get_ring(
+                    ipt.get_ring(
                         'output',
-                        'ipv4',
+                        transport,
                         [
-                            ipb.get_rule(
+                            ipt.get_rule(
                                 ip_protocol_name='tcp', dest_address=addr, matches=[
-                                    ipb.get_match('state',
-                                                  [ipb.get_jump_option('--state', 'NEW,ESTABLISHED'), ], ),
-                                    ipb.get_match('tcp', [ipb.get_match_option('--dport', port), ], ),
+                                    ipt.get_match('state',
+                                                  [ipt.get_jump_option('--state', 'NEW,ESTABLISHED'), ], ),
+                                    ipt.get_match('tcp', [ipt.get_match_option('--dport', port), ], ),
                                 ],
-                                jump=ipb.get_jump(target='ACCEPT')
+                                jump=ipt.get_jump(target='ACCEPT')
                             )
                         ]
                     ),

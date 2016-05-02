@@ -1,8 +1,8 @@
 #
-# Authors: Robert Abram <robert.abram@entpack.com>
+# Authors: Robert Abram <robert.abram@entpack.com>,
 #
 # Copyright (C) 2015 EntPack
-# see file 'COPYING' for use and warranty information
+# see file 'LICENSE' for use and warranty information
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -17,17 +17,3 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
-
-
-class ModuleLoadError(Exception):
-    """There was an Exception thrown while trying to load the module"""
-    pass
-
-
-class ImproperlyConfigured(Exception):
-    """ Silent Dune Client is improperly configured somehow """
-    pass
-
-
-class InvalidIPAddress(Exception):
-    """ Invalid IP Address """

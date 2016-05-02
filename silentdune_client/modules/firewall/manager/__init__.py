@@ -80,7 +80,17 @@ class SilentDuneClientFirewallModule(modules.BaseModule):
         _logger.debug('{0} thread shutdown called'.format(self.get_name()))
         self.save_iptables()
 
-        # TODO: Flush iptables rules and delete user defined chains. iptables -F; iptables --delete-chain
+        # Flush iptables
+        try:
+            check_output(['iptables', '--flush'])
+        except CalledProcessError:
+            pass
+
+        # Delete chains
+        try:
+            check_output(['iptables', '--delete-chain'])
+        except CalledProcessError:
+            pass5
 
     def process_loop(self):
         # _logger.debug('{0} processing loop called'.format(self.get_name()))

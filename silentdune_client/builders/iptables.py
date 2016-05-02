@@ -21,6 +21,9 @@
 from silentdune_client.models.iptables_rules import IPJumpOptions, IPJump, IPMatchOptions, \
     IPMatch, IPRule, IPRing, IPChain, IPMachineSubset
 
+TRANSPORT_IPV4 = 'ipv4'
+TRANSPORT_IPV6 = 'ipv6'
+TRANSPORT_AUTO = 'auto'
 
 def get_machine_subset(name, slot, chains, platform='iptables', _id=0):
     """

@@ -33,7 +33,7 @@ from silentdune_client.models.node import Node, NodeBundle
 from silentdune_client.modules import QueueTask
 from silentdune_client.modules.comm.sd_server.connection import SDSConnection
 from silentdune_client.modules.firewall.manager import SilentDuneClientFirewallModule, TASK_FIREWALL_RELOAD_RULES
-from silentdune_client.modules.comm.sd_server.auto_rules import create_server_conn_rule
+from silentdune_client.modules.comm.sd_server.auto_rules import create_tcp_server_conn_rule
 from silentdune_client.utils.misc import is_valid_ipv4_address, is_valid_ipv6_address
 
 _logger = logging.getLogger('sd-client')
@@ -267,9 +267,10 @@ class SilentDuneServerModule(modules.BaseModule):
 
         # TODO: Change this up to use something other than a user and password to connect with.
 
+        # TODO: Retrieve decryption key
+
         if not self._sds_conn.connect_with_password('tester', '12341234'):
-            _logger.debug('Failed to connect with Silent Dune server.')
-            return False
+            _logger.debug('Failed to connect with Silent Dune server, will attempt reconnection.')
 
         return True
 
@@ -279,7 +280,10 @@ class SilentDuneServerModule(modules.BaseModule):
         return True
 
     def process_loop(self):
-        # _logger.debug('{0} processing loop called'.format(self.get_name()))
+
+        # TODO: Check to see if we had a good connection, if not try reconnecting every 60 seconds.
+
+        # TODO: Port knocker event triggers.  https://github.com/moxie0/knockknock
 
         # Every 10 seconds, send the firewall module a QueueTask
         if self._seconds_t > self._event_t and self._seconds_t % 4 == 0.0:
@@ -400,7 +404,7 @@ class SilentDuneServerModule(modules.BaseModule):
         Create machine subset to allow this node to access the Silent Dune server and then insert it into the bundle.
         :return:
         """
-        ms = create_server_conn_rule(self._server, self._port)
+        ms = create_tcp_server_conn_rule(self._server, self._port)
 
         ol = list()
         ol.append(ms)

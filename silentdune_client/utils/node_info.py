@@ -186,8 +186,8 @@ class NodeInformation(ConsoleBase):
         self.previous_firewall_service = get_active_firewall()
 
         if not self.previous_firewall_service:
-            self.cwriteline('[Error]', 'Unable to detect running firewall service.')
-            return False
+            self.cwriteline('[OK]', 'Unable to detect running firewall service.')
+            return True
 
         self.cwriteline('[OK]', 'Detected {0} firewall service.'.format(self.previous_firewall_service))
 
