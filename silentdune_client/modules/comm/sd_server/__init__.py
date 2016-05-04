@@ -21,12 +21,13 @@
 import logging
 import os
 import platform
-import socket
-import sys
-from subprocess import check_output, CalledProcessError
-
 import pkg_resources
 import requests
+import socket
+import sys
+
+from subprocess import check_output, CalledProcessError
+from cryptography.fernet import Fernet
 
 from silentdune_client import modules
 from silentdune_client.models.node import Node, NodeBundle
@@ -59,6 +60,7 @@ class SilentDuneServerModule(modules.BaseModule):
 
     # Server Connection
     _sds_conn = None
+    _connected = False
 
     # Server objects
     _node = None
@@ -67,7 +69,7 @@ class SilentDuneServerModule(modules.BaseModule):
     _bundle_machine_subsets = None
 
     # Timed events.
-    _event_t = 0
+    # _event_t = 0
 
     def __init__(self):
 
@@ -303,36 +305,37 @@ class SilentDuneServerModule(modules.BaseModule):
         Contact the server to register this node with the server.
         """
 
-        # Look for existing Node record first.
-        self._node, status_code = self._sds_conn.get_node_by_machine_id(self._node_info.machine_id)
+        self.cwrite('Registering Node...  ')
 
-        if status_code != requests.codes.ok:
+        node = Node(
+            platform=self._node_info.firewall_platform,
+            os=platform.system().lower(),
+            dist=platform.dist()[0],
+            dist_version=platform.dist()[1],
+            hostname=socket.gethostname(),
+            python_version=sys.version.replace('\n', ''),
+            machine_id=self._node_info.machine_id,
+            fernet_key=Fernet.generate_key().decode('UTF-8')
+        )
+
+        # Attempt to register this node on the SD server.
+        self._node, status_code = self._sds_conn.register_node(node)
+
+        # Check to see if the node already exists on the server.
+        if status_code == requests.codes.conflict:
+
+            # Look for existing Node record.
+            self._node, status_code = self._sds_conn.get_node_by_machine_id(self._node_info.machine_id)
+
+            if status_code == requests.codes.ok and self._node:
+                _logger.warning('Node already registered, using previously registered node information.')
+                return True
+
+        if status_code != requests.codes.ok or not self._node or self._node.id is None:
+            self.cwriteline('[Failed]', 'Register Node failed, unknown reason.')
             return False
 
-        if self._node:
-            _logger.warning('Node already registered, using previously registered node information.')
-        else:
-
-            self.cwrite('Registering Node...  ')
-
-            node = Node(
-                platform=self._node_info.firewall_platform,
-                os=platform.system().lower(),
-                dist=platform.dist()[0],
-                dist_version=platform.dist()[1],
-                hostname=socket.gethostname(),
-                python_version=sys.version.replace('\n', ''),
-                machine_id=self._node_info.machine_id,
-            )
-
-            # Attempt to register this node on the SD server.
-            self._node, status_code = self._sds_conn.register_node(node)
-
-            if not self._node or self._node.id is None:
-                self.cwriteline('[Failed]', 'Register Node failed, unknown reason.')
-                return False
-
-            self.cwriteline('[OK]', 'Node successfully registered.')
+        self.cwriteline('[OK]', 'Node successfully registered.')
 
         return True
 

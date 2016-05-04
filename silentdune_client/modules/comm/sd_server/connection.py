@@ -131,13 +131,13 @@ class SDSConnection (ConsoleBase):
         try:
 
             self._build_base_url()
-            rq = requests.get('{0}/accounts/login/'.format(self._base_url))
+            resp = requests.get('{0}/accounts/login/'.format(self._base_url))
 
-            if rq.status_code != requests.codes.ok:
-                _logger.error('Unable to retrieve CSRF token ({0})'.format(rq.status_code))
+            if resp.status_code != requests.codes.ok:
+                _logger.error('Unable to retrieve CSRF token ({0})'.format(resp.status_code))
                 return False
 
-            csrf = rq.cookies['csrftoken']
+            csrf = resp.cookies['csrftoken']
 
         except Exception:
             _logger.error('CSRF token request attempt failed.')
@@ -147,24 +147,24 @@ class SDSConnection (ConsoleBase):
         try:
 
             # Make a POST authentication request to get the encrypted oauth2 token
-            rq = requests.post('{0}/accounts/login/'.format(self._base_url),
-                               cookies=rq.cookies,
-                               data={'grant_type': 'password', 'username': username, 'password': password,
-                                     'csrfmiddlewaretoken': csrf})
+            resp = requests.post('{0}/accounts/login/'.format(self._base_url),
+                                 cookies=resp.cookies,
+                                 data={'grant_type': 'password', 'username': username, 'password': password,
+                                 'csrfmiddlewaretoken': csrf})
 
-            if rq.status_code != requests.codes.ok:
-                _logger.error('Unable to authenticate to server ({0})'.format(rq.status_code))
+            if resp.status_code != requests.codes.ok:
+                _logger.error('Unable to authenticate to server ({0})'.format(resp.status_code))
                 return False
 
         except requests.RequestException:
             _logger.error('Authentication request attempt failed')
             return False
 
-        if rq.json() is None:
+        if resp.json() is None:
             _logger.error('Unknown error occurred parsing server response.')
 
         # Convert reply into JSON
-        reply = rq.json()
+        reply = resp.json()
 
         # Check reply status value
         if reply['status'] != 'OK':
@@ -172,8 +172,8 @@ class SDSConnection (ConsoleBase):
             return False
 
         # Save token and cookies for later use
-        self._oauth_crypt_token = rq.cookies['token']
-        self._cookies = rq.cookies
+        self._oauth_crypt_token = resp.cookies['token']
+        self._cookies = resp.cookies
 
         self.cwriteline('[OK]', 'Successfully authenticated with server.')
 
