@@ -304,6 +304,12 @@ class SilentDuneServerModule(modules.BaseModule):
         """
         Contact the server to register this node with the server.
         """
+        # Look for existing Node record.
+        self._node, status_code = self._sds_conn.get_node_by_machine_id(self._node_info.machine_id)
+
+        if status_code == requests.codes.ok and self._node:
+            _logger.warning('Node already registered, using previously registered node information.')
+            return True
 
         self.cwrite('Registering Node...  ')
 
@@ -321,17 +327,7 @@ class SilentDuneServerModule(modules.BaseModule):
         # Attempt to register this node on the SD server.
         self._node, status_code = self._sds_conn.register_node(node)
 
-        # Check to see if the node already exists on the server.
-        if status_code == requests.codes.conflict:
-
-            # Look for existing Node record.
-            self._node, status_code = self._sds_conn.get_node_by_machine_id(self._node_info.machine_id)
-
-            if status_code == requests.codes.ok and self._node:
-                _logger.warning('Node already registered, using previously registered node information.')
-                return True
-
-        if status_code != requests.codes.ok or not self._node or self._node.id is None:
+        if status_code != requests.codes.created or not self._node or self._node.id is None:
             self.cwriteline('[Failed]', 'Register Node failed, unknown reason.')
             return False
 

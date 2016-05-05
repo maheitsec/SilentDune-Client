@@ -223,7 +223,7 @@ class SDSConnection (ConsoleBase):
             if status_code == requests.codes.created:
                 return Node(reply), status_code
 
-        return None, requests.codes.teapot
+        return None, status_code
 
     def get_bundle_by_name(self, name):
         """
