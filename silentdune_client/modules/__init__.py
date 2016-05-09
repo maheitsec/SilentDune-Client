@@ -19,9 +19,7 @@
 #
 
 import logging
-import grp
 import os
-import pwd
 import time
 
 from silentdune_client.utils.node_info import NodeInformation

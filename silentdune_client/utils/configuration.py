@@ -23,7 +23,6 @@ import grp
 import logging
 import os
 import pwd
-import shutil
 from collections import OrderedDict
 from subprocess import check_output, CalledProcessError
 
@@ -110,7 +109,6 @@ class ClientConfiguration(object):
         del self._config[section][key]
 
         return True
-
 
     def set(self, section, key, val):
         """

@@ -22,21 +22,22 @@ import argparse
 import gettext
 import logging
 import os
-import sys
 import subprocess
+import sys
 from subprocess import CalledProcessError
 
 from silentdune_client.modules import __load_modules__
 from silentdune_client.utils.configuration import ClientConfiguration
 from silentdune_client.utils.console import ConsoleBase
 from silentdune_client.utils.log import setup_logging
-from silentdune_client.utils.node_info import NodeInformation
 from silentdune_client.utils.misc import is_process_running, node_info_dump, which, rmdir
+from silentdune_client.utils.node_info import NodeInformation
 
 try:
-    from configparser import ConfigParser
+    from configparser import ConfigParser  # noqa
 except ImportError:
-    from ConfigParser import ConfigParser  # ver. < 3.0
+    # ver. < 3.0
+    from ConfigParser import ConfigParser  # noqa
 
 _logger = logging.getLogger('sd-client')
 
@@ -73,7 +74,7 @@ class Installer(ConsoleBase):
         for mod in self.__modules:
             result = mod.prepare_config(self.__config)
 
-            if result == False:  # If prepare_config() return None, we just want to continue.
+            if result is False:  # If prepare_config() returns None, we just want to continue.
                 _logger.error('Preparing configuration file items failed in module {0}.'.format(mod.get_name()))
                 return False
 
@@ -133,9 +134,9 @@ class Installer(ConsoleBase):
 
             # Replace key words with local file locations.
             sed_args = 's/%%KILL%%/{0}/g;s/%%SDC-FIREWALL%%/{1}/g'.format(
-                                 self.node_info.kill.replace('/', '\/'),
-                                 firewall_exec.replace('/', '\/')
-                             )
+                self.node_info.kill.replace('/', '\/'),
+                firewall_exec.replace('/', '\/')
+            )
 
             args = [self.node_info.sed, sed_args, systemd_in_file]
 
@@ -373,7 +374,7 @@ def run():
 
     # Have each module validate arguments.
     for mod in module_list:
-        if mod.validate_arguments(args) == False:  # If return value is None, we just want to continue.
+        if mod.validate_arguments(args) is False:  # If return value is None, we just want to continue.
             parser.print_help()
             exit(1)
 

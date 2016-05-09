@@ -20,10 +20,8 @@
 
 import logging
 import os
-import platform
 import random
 import string
-import sys
 from subprocess import check_output, CalledProcessError
 
 from silentdune_client.utils.console import ConsoleBase

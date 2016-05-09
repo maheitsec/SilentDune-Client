@@ -97,17 +97,17 @@ class SilentDuneServerModule(modules.BaseModule):
 
         group.add_argument('--server-mod-disable', action='store_true', help=_('Disable the server module'))  # noqa
 
-        group.add_argument(_('--server'), help=_('Silent Dune server network address (required)'),
+        group.add_argument(_('--server'), help=_('Silent Dune server network address (required)'),  # noqa
                         default=None, type=str, metavar='IP')  # noqa
-        group.add_argument(_('--server-bundle'), help=_('Firewall bundle to use for this node (required)'),
+        group.add_argument(_('--server-bundle'), help=_('Firewall bundle to use for this node (required)'),  # noqa
                         default=None, type=str, metavar='BUNDLE')  # noqa
-        group.add_argument(_('--server-user'), help=_('Server admin user name (required)'),
+        group.add_argument(_('--server-user'), help=_('Server admin user name (required)'),  # noqa
                         default=None, type=str, metavar='USER')  # noqa
-        group.add_argument(_('--server-password'), help=_('Server admin password (required)'),
+        group.add_argument(_('--server-password'), help=_('Server admin password (required)'),  # noqa
                         default=None, type=str, metavar='PASSWORD')  # noqa
-        group.add_argument(_('--server-no-tls'), help=_('Do not use a TLS connection'),
+        group.add_argument(_('--server-no-tls'), help=_('Do not use a TLS connection'),  # noqa
                         default=False, action='store_true')  # noqa
-        group.add_argument(_('--server-port'), help=_('Use alternate http port'),
+        group.add_argument(_('--server-port'), help=_('Use alternate http port'),  # noqa
                         default=0, type=int, metavar='PORT')  # noqa
 
     def validate_arguments(self, args):
@@ -119,12 +119,12 @@ class SilentDuneServerModule(modules.BaseModule):
 
         # Check for conflicting arguments.
         if '--server-mod-disable' in sys.argv and (
-                                        '--server' in sys.argv or
-                                        '--server-bundle' in sys.argv or
-                                        '--server-user' in sys.argv or
-                                        '--server-password' in sys.argv or
-                                        '--server-no-tls' in sys.argv or
-                                        '--server-port' in sys.argv):
+                '--server' in sys.argv or
+                '--server-bundle' in sys.argv or
+                '--server-user' in sys.argv or
+                '--server-password' in sys.argv or
+                '--server-no-tls' in sys.argv or
+                '--server-port' in sys.argv):
             print('sdc-install: argument --server-mod-disable conficts with other server module arguments.')
             return False
 

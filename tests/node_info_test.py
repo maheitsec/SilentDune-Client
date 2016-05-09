@@ -19,13 +19,17 @@
 #
 
 # import pytest
+from unittest import TestCase
+
 from silentdune_client.utils.node_info import NodeInformation
 
 
-def test_node_info():
-    """
-    Test that the NodeInformation init process succeeds.
-    """
-    assert not NodeInformation().error
+class NodeInformationTest(TestCase):
+
+    def test_node_info(self):
+        """
+        Test that the NodeInformation init process succeeds.
+        """
+        assert not NodeInformation().error
 
 

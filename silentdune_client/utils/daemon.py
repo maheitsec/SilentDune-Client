@@ -47,8 +47,8 @@ class Daemon(object):
     Usage: subclass the Daemon class and override the run() method
     """
 
-    def __init__(self, procbase=None, dirmask=None, pidfile=None, uid='nobody', gid='nobody', stdin='/dev/null', stdout='/dev/null',
-                 stderr='/dev/null'):
+    def __init__(self, procbase=None, dirmask=None, pidfile=None, uid='nobody', gid='nobody',
+                 stdin='/dev/null', stdout='/dev/null', stderr='/dev/null'):
         self.procbase = procbase
         self.dirmask = dirmask
 

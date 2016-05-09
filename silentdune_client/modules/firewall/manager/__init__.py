@@ -63,9 +63,6 @@ class SilentDuneClientFirewallModule(modules.BaseModule):
         """
         Virtual Override
         """
-
-
-
         return True
 
     def service_startup(self):
@@ -90,7 +87,7 @@ class SilentDuneClientFirewallModule(modules.BaseModule):
         try:
             check_output(['iptables', '--delete-chain'])
         except CalledProcessError:
-            pass5
+            pass
 
     def process_loop(self):
         # _logger.debug('{0} processing loop called'.format(self.get_name()))

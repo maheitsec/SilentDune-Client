@@ -373,7 +373,7 @@ class IPRule(JsonObject):
                                              else u'', self.source_address, self.source_mask)
             else:
                 s = u' -s{0} {1}'.format(u' !' if self.source_invert is True
-                                             else u'', self.source_address)
+                                         else u'', self.source_address)
             stream.write(s)
 
         if self.dest_address:
@@ -382,7 +382,7 @@ class IPRule(JsonObject):
                                              else u'', self.dest_address, self.dest_mask)
             else:
                 s = u' -d{0} {1}'.format(u' !' if self.dest_invert is True
-                                             else u'', self.dest_address)
+                                         else u'', self.dest_address)
             stream.write(s)
 
         if self.matches is not None:  # Call child objects write method.

@@ -25,6 +25,7 @@ TRANSPORT_IPV4 = 'ipv4'
 TRANSPORT_IPV6 = 'ipv6'
 TRANSPORT_AUTO = 'auto'
 
+
 def get_machine_subset(name, slot, chains, platform='iptables', _id=0):
     """
     Return an IPMachineSubset object
