@@ -69,7 +69,7 @@ class SilentDuneServerModule(modules.BaseModule):
     _bundle_machine_subsets = None
 
     # Timed events.
-    # _event_t = 0
+    _event_t = 0
 
     def __init__(self):
 
@@ -271,7 +271,9 @@ class SilentDuneServerModule(modules.BaseModule):
 
         # TODO: Retrieve decryption key
 
-        if not self._sds_conn.connect_with_password('tester', '12341234'):
+        if self._sds_conn.connect_with_machine_id(self._node_info.machine_id):
+            self._connected = True
+        else:
             _logger.debug('Failed to connect with Silent Dune server, will attempt reconnection.')
 
         return True

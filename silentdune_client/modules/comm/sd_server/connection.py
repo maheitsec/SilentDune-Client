@@ -33,8 +33,9 @@ _logger = logging.getLogger('sd-client')
 
 class SDSConnection (ConsoleBase):
 
-    # Security
-    _oauth_crypt_token = None
+    # Server Authentication
+    _oauth_crypt_token = None  # Fernet Encrypted oauth2 information
+    _machine_id = None  # Machine id to use for authentication
     _cookies = None
     authenticated = False
 
@@ -60,6 +61,21 @@ class SDSConnection (ConsoleBase):
         self._base_url += self._server
         self._base_url += '' if self._port == -1 else ':{0}'.format(self._port)
 
+    def _set_authentication(self):
+        """
+        Set the server Authentication information for each request.  During the install process, oauth2 authentication
+        is used in a cookie. While the service is running, machine_id authentication is used in a request header.
+        :return:
+        """
+
+        if self._machine_id:
+            return {'node': self._machine_id}, None
+
+        if self._oauth_crypt_token:
+            return None, dict(token=self._oauth_crypt_token)
+
+        return None, None
+
     def _make_json_request(self, reqtype, url, data=None):
 
         reply = None
@@ -75,18 +91,21 @@ class SDSConnection (ConsoleBase):
             self._build_base_url()
             u = '{0}{1}'.format(self._base_url, url)
 
+            # Set the server authentication method.
+            headers, cookies = self._set_authentication()
+
             if reqtype is 'GET':
-                rq = requests.get(u, cookies=dict(token=self._oauth_crypt_token), timeout=30)
+                rq = requests.get(u, cookies=cookies, headers=headers, timeout=30)
             elif reqtype is 'POST':
-                rq = requests.post(u, data=data, cookies=dict(token=self._oauth_crypt_token), timeout=30)
+                rq = requests.post(u, data=data, cookies=cookies, headers=headers, timeout=30)
             elif reqtype is 'PUT':
-                rq = requests.put(u, data=data, cookies=dict(token=self._oauth_crypt_token), timeout=30)
+                rq = requests.put(u, data=data, cookies=cookies, headers=headers, timeout=30)
             elif reqtype is 'DELETE':
-                rq = requests.delete(u, cookies=dict(token=self._oauth_crypt_token), timeout=30)
+                rq = requests.delete(u, cookies=cookies, headers=headers, timeout=30)
             elif reqtype is 'HEAD':
-                rq = requests.head(u, cookies=dict(token=self._oauth_crypt_token), timeout=30)
+                rq = requests.head(u, cookies=cookies, headers=headers, timeout=30)
             elif reqtype is 'OPTIONS':
-                rq = requests.options(u, cookies=dict(token=self._oauth_crypt_token), timeout=30)
+                rq = requests.options(u, cookies=cookies, headers=headers, timeout=30)
 
         except requests.Timeout:
             _logger.error('Server request timeout.')
@@ -141,7 +160,6 @@ class SDSConnection (ConsoleBase):
 
         except Exception:
             _logger.error('CSRF token request attempt failed.')
-            raise
             return False
 
         try:
@@ -180,6 +198,49 @@ class SDSConnection (ConsoleBase):
         self.authenticated = True
 
         return True
+
+    def connect_with_machine_id(self, machine_id):
+        """
+        Authenticate to the server with node machine_id value.
+        :return: True if connected and authenticate, otherwise false.
+        """
+
+        self._machine_id = machine_id
+
+        self.cwrite('Resolving server...  ')
+
+        try:
+            self._ip = socket.gethostbyname(self._server)
+        except socket.error:
+            _logger.error('Unable to resolve server ({0})'.format(self._server))
+            return False
+
+        self.cwriteline('[OK]', 'Server successfully resolved.')
+
+        self.cwrite('Attempting to authenticate with SD server...  ')
+
+        try:
+            # Set authenticated to True so we can make a request.
+            self.authenticated = True
+
+            url = '/api/nodes/?machine_id={0}'.format(self._machine_id)
+
+            # Reply contains dict array of Node records.  Reply array should be empty or contain one Node record.
+            reply, status_code, rq = self._make_json_request('GET', url)
+
+            if status_code == requests.codes.ok:
+                if reply is not None and reply[0]['machine_id'] == self._machine_id:
+                    self.authenticated = True
+                    self.cwriteline('[OK]', 'Successfully authenticated with server.')
+                    return True
+
+        except requests.RequestException:
+            _logger.error('Node authentication request attempt failed')
+
+        self.authenticated = False
+        self.cwriteline('[Error]', 'Failed to authenticated with server.')
+
+        return False
 
     def get_node_by_machine_id(self, machine_id):
         """
