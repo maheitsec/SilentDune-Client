@@ -49,8 +49,8 @@ def run():
         stopProcessing = False
         reload = False
 
-        _start_t = time.time()
-        _mod_check_t = 0
+        t_start = time.time()
+        t_mod_check = 0
 
         def __init__(self, *args, **kwargs):
 
@@ -112,10 +112,10 @@ def run():
             """
 
             # We only want to do a check once a minute.
-            time_t = int((time.time() - self._start_t))
+            time_t = int((time.time() - self.t_start))
 
-            if (time_t > self._mod_check_t and time_t % 60.0 == 0.0) or force:
-                self._mod_check_t = int((time.time() - self._start_t))
+            if (time_t > self.t_mod_check and time_t % 60.0 == 0.0) or force:
+                self.t_mod_check = int((time.time() - self.t_start))
 
                 # Check to see that module process threads are still running.
                 _logger.debug('Checking module threads.')
@@ -177,12 +177,12 @@ def run():
                     try:
                         task = mqueue.get_nowait()
                         _logger.debug('Forwarding task ({0}) from {1} to {2}'.format(
-                            task.get_task_id(), task.get_src_name(), task.get_dest_name()))
+                            task.get_task_id(), task.get_sender(), task.get_dest_name()))
 
                         if task:
                             # Find the destination module and send task to it.
                             if not task.get_dest_name() or not cqueues[task.get_dest_name()]:
-                                _logger.error('Task from {0} has unknown destination.'.format(task.get_src_name()))
+                                _logger.error('Task from {0} has unknown destination.'.format(task.get_sender()))
 
                             cqueues[task.get_dest_name()].put(task)
                     except:

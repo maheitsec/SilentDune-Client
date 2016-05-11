@@ -259,11 +259,8 @@ class SDSConnection (ConsoleBase):
             if reply is not None and len(reply) != 0:
                 return Node(reply[0]), status_code
 
-            return None, status_code
-
         _logger.error('Node lookup request failed.')
-
-        return None, requests.codes.teapot
+        return None, status_code
 
     def register_node(self, node):
         """
@@ -281,9 +278,48 @@ class SDSConnection (ConsoleBase):
         if reply is not None and status_code is not None:
 
             # 201 means the node record was created successfully.
-            if status_code == requests.codes.created:
+            if status_code == requests.codes.created or status_code == requests.codes.ok:
                 return Node(reply), status_code
 
+        _logger.debug('Register node failed ({0}).'.format(status_code))
+        return None, status_code
+
+    def update_node(self, node):
+        """
+        Update Node information on server.
+        :param node:
+        :return Node:
+        """
+        if not isinstance(node, Node):
+            _logger.critical('Node parameter is not valid in register_node method.')
+            return None, requests.codes.teapot
+
+        # Reply contains single Node record
+        reply, status_code, rq = self._make_json_request('PUT', '/api/nodes/{0}/'.format(node.id), node.to_dict())
+
+        if reply is not None and status_code is not None:
+
+            # 200 means the node record was update successfully.
+            if status_code == requests.codes.ok:
+                return Node(reply), status_code
+
+        _logger.debug('Update node failed ({0}).'.format(status_code))
+        return None, status_code
+
+    def get_node_bundle_by_node_id(self, node_id):
+        """
+        Get the Node Bundle from the server using the node id
+        :param node_id:
+        :return:
+        """
+        url = '/api/nodes/{0}/bundle/'.format(node_id)
+
+        reply, status_code, rq = self._make_json_request('GET', url)
+
+        if reply is not None and status_code == requests.codes.ok and len(reply) > 0:
+            return NodeBundle(reply[0]), status_code
+
+        _logger.error('Failed to retrieve node bundle by node id ({0}).'.format(node_id))
         return None, status_code
 
     def get_bundle_by_name(self, name):
@@ -292,7 +328,6 @@ class SDSConnection (ConsoleBase):
         :param name:
         :return Bundle:
         """
-
         url = '/api/bundles/?name={0}'.format(name)
 
         reply, status_code, rq = self._make_json_request('GET', url)
@@ -300,7 +335,24 @@ class SDSConnection (ConsoleBase):
         if reply is not None and status_code == requests.codes.ok and len(reply) > 0:
             return Bundle(reply[0]), status_code
 
-        return None, requests.codes.teapot
+        _logger.error('Failed to retrieve bundle by name ({0}).'.format(name))
+        return None, status_code
+
+    def get_bundle_by_id(self, bundle_id):
+        """
+        Request Bundle object from server filtered by name value.
+        :param name:
+        :return Bundle:
+        """
+        url = '/api/bundles/{0}/'.format(bundle_id)
+
+        reply, status_code, rq = self._make_json_request('GET', url)
+
+        if reply is not None and status_code == requests.codes.ok and len(reply) > 0:
+            return Bundle(reply), status_code
+
+        _logger.error('Failed to retrieve bundle by id ({0}).'.format(bundle_id))
+        return None, status_code
 
     def get_default_bundle(self):
         """
@@ -316,13 +368,12 @@ class SDSConnection (ConsoleBase):
         if reply is not None and status_code == requests.codes.ok and len(reply) > 0:
             return Bundle(reply[0]), status_code
 
-        return None, requests.codes.teapot
+        return None, status_code
 
-    def create_or_update_node_bundle(self, nb):
+    def create_node_bundle(self, nb):
 
-        # if isinstance(nb, NodeBundle):  <-- Not working, unsure why.
         if nb is None:
-            _logger.critical('NodeBundle parameter is not valid in create_or_update_node_bundle method.')
+            _logger.critical('NodeBundle parameter is not valid in create_node_bundle method.')
             return None, requests.codes.teapot
 
         url = '/api/nodes/{0}/bundle/'.format(nb.node)
@@ -334,7 +385,24 @@ class SDSConnection (ConsoleBase):
                 (status_code == requests.codes.created or status_code == requests.codes.ok):
             return NodeBundle(reply), status_code
 
-        return None, requests.codes.teapot
+        return None, status_code
+
+    def update_node_bundle(self, nb):
+
+        if nb is None:
+            _logger.critical('NodeBundle parameter is not valid in update_node_bundle method.')
+            return None, requests.codes.teapot
+
+        url = '/api/nodes/{0}/bundle/{1}/'.format(nb.node, nb.bundle)
+
+        # NodeBundleViewSet will update or create with a POST request.
+        reply, status_code, rq = self._make_json_request('PUT', url, nb.to_dict())
+
+        if reply is not None and \
+                (status_code == requests.codes.created or status_code == requests.codes.ok):
+            return NodeBundle(reply), status_code
+
+        return None, status_code
 
     def get_bundle_machine_subsets(self, nb):
 
@@ -364,7 +432,7 @@ class SDSConnection (ConsoleBase):
                     ol.append(IPMachineSubset(reply))
 
         if len(ol) == 0:
-            return None, requests.codes.teapot
+            return None, status_code
 
         return ol, status_code
 

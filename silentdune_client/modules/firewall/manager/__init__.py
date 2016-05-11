@@ -44,12 +44,14 @@ module_list = {
 class SilentDuneClientFirewallModule(modules.BaseModule):
     """ Silent Dune Server Module """
 
+    priority = 0  # Highest loading priority.
+
     def __init__(self):
 
         # Set our module name
         # self._name = 'SilentDuneClientFirewallModule'
         self._arg_name = 'firewall'
-        self._config_section = 'firewall_module'
+        self._config_section_name = 'firewall_module'
 
         # Enable multi-threading
         self.wants_processing_thread = True
@@ -99,7 +101,12 @@ class SilentDuneClientFirewallModule(modules.BaseModule):
     def process_task(self, task):
 
         if task:
-            _logger.debug('Received task {0} from {1}.'.format(task.get_task_id(), task.get_src_name()))
+            _logger.debug('Received task {0} from {1}.'.format(task.get_task_id(), task.get_sender()))
+            t_id = task.get_task_id()
+
+            if t_id == TASK_FIREWALL_RELOAD_RULES:
+                _logger.debug('Task event received, reloading firewall rules.')
+                self.restore_iptables()
 
     def restore_iptables(self):
         """
@@ -110,13 +117,13 @@ class SilentDuneClientFirewallModule(modules.BaseModule):
         # Load rule files into kernel
         for v in {u'ipv4', u'ipv6'}:
 
-            file = os.path.join(self._node_info.config_root, u'{0}.rules'.format(v))
+            file = os.path.join(self.node_info.config_root, u'{0}.rules'.format(v))
             if os.path.exists(file):
                 try:
                     with open(file) as handle:
                         data = handle.read()
 
-                    p = subprocess.Popen([self._node_info.iptables_restore, '-c'], stdin=subprocess.PIPE)
+                    p = subprocess.Popen([self.node_info.iptables_restore, '-c'], stdin=subprocess.PIPE)
                     p.communicate(data)
                     result = p.wait()
 
@@ -141,9 +148,9 @@ class SilentDuneClientFirewallModule(modules.BaseModule):
         # Load rule files into kernel
         for v in {u'ipv4', u'ipv6'}:
 
-            file = os.path.join(self._node_info.config_root, u'{0}.rules.2'.format(v))
+            file = os.path.join(self.node_info.config_root, u'{0}.rules.2'.format(v))
             try:
-                p = subprocess.Popen([self._node_info.iptables_save, '-c'], stdout=subprocess.PIPE)
+                p = subprocess.Popen([self.node_info.iptables_save, '-c'], stdout=subprocess.PIPE)
                 data = p.communicate()[0]
                 result = p.wait()
 

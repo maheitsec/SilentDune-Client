@@ -41,24 +41,29 @@ class QueueTask(object):
     """
 
     _task_id = None  # One of the TASK id value from above.
-    _src_name = None  # Source module name
-    _dest_name = None  # Destination module name
+    _trans_id = None  # ID used by the source to track messages.
+    _src_module = None  # Source module name
+    _dest_module = None  # Destination module name
     _data = None  # Data for this task.
 
-    def __init__(self, task_id, src_name=None, dest_name=None, data=None):
+    def __init__(self, task_id, src_module=None, dest_module=None, data=None, trans_id=None, ):
         self._task_id = task_id
-        self._src_name = src_name
-        self._dest_name = dest_name
+        self._src_module = src_module
+        self._dest_module = dest_module
         self._data = data
+        self._trans_id = trans_id
 
     def get_task_id(self):
         return self._task_id
 
-    def get_src_name(self):
-        return self._src_name
+    def get_sender(self):
+        return self._src_module
+
+    def get_trans_id(self):
+        return self._trans_id
 
     def get_dest_name(self):
-        return self._dest_name
+        return self._dest_module
 
     def get_data(self):
         return self._data
@@ -73,9 +78,8 @@ class BaseModule(ConsoleBase):
     # The name of the module and version.
     # _name = 'UnknownModule'
     _arg_name = 'unknown'  # This is the argparser name for this module
-    _config_section = 'unknown'  # This is the configuration file section name
+    _config_section_name = 'unknown'  # This is the configuration file section name
     _version = '0.0.1'
-    _config = None
     _enabled = True
 
     # Multi thread processing properties
@@ -91,10 +95,15 @@ class BaseModule(ConsoleBase):
     _queue_timeout = 1.0  # Min = 0.01, Max = 10.0.
 
     # _start_t and _seconds_t can be used to for timed events.
-    _start_t = time.time()
-    _seconds_t = 0                   # Number of seconds that have passed since this process started.
+    t_start = time.time()
+    t_seconds = 0                   # Number of seconds that have passed since this process started.
 
-    _node_info = NodeInformation()
+    # Configuration File and Node Information objects.
+    config = None
+    node_info = NodeInformation()
+
+    # Module loading priority
+    priority = 100  # 0 highest -> 100 lowest
 
     """
     Installer Virtual Methods
@@ -120,7 +129,7 @@ class BaseModule(ConsoleBase):
         """
         :return: configuration
         """
-        return self._config
+        return self.config
 
     def disable_module(self):
         self._enabled = False
@@ -156,7 +165,7 @@ class BaseModule(ConsoleBase):
         """
         Do not override this method
         """
-        self._config = config
+        self.config = config
 
     def pre_install(self):
         """
@@ -243,7 +252,7 @@ class BaseModule(ConsoleBase):
         while True:
 
             try:
-                self._seconds_t = int(time.time() - self._start_t)
+                self.t_seconds = int(time.time() - self.t_start)
                 task = queue.get(timeout=self._queue_timeout)  # Wait while looking for a QueueTask object.
             except:
                 self.process_loop()  # Call the processing loop for module idle processing.
@@ -323,6 +332,8 @@ def __load_modules__(base_path=None, module_path='silentdune_client/modules'):
                             except ImportError:
                                 _logger.error('Adding "{0}" module failed. ({1}).'.format(mname, tpath))
                                 pass
+
+    module_list.sort(key=lambda x: x.priority)
 
     return module_list
 

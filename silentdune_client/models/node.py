@@ -34,8 +34,11 @@ class Node(JsonObject):
     python_version = None
     machine_id = None  # Unique machine ID.
     last_connection = None  # Last connection datetime stamp.
-    node_sync = False  # If True, server is requesting this Node to push it's information to the server.
+    sync = None  # True if node needs to download new rule bundleset and update its information on the server.
     notes = None  # Notes about this node
+    node_state = None  # A string of values representing the current node state. IE: 'active normal'
+    polling_frequency = None  # A numeric value representing the number of minutes the node should check the server.
+    fernet_key = None  # A fernet encryption key.
 
 
 class NodeBundle(JsonObject):
