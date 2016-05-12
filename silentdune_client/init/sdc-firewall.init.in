@@ -6,20 +6,21 @@
 # description:	The firewall deamon manages the firewall and handles dynamic
 #               firewall changes.
 #
-# config:	/etc/firewalld
-# pidfile:      /var/run/silentdune/sdc.pid
+# processname: sdc-firewall
+# config: /etc/silentdune/sdc.conf
+# pidfile: /var/run/silentdune/sdc.pid
 #
 
 ### BEGIN INIT INFO
 # Provides:  sdc-firewall
-# Required-Start: $syslog $local_fs
-# Required-Stop:
-# Should-Start:
-# Should-Stop:
-# Default-Start:
-# Default-Stop:
-# Short-Description:
-# Description:
+# Required-Start: $syslog $network $local_fs
+# Required-Stop: $local_fs $syslog
+# Should-Start: $syslog
+# Should-Stop: $network $syslog
+# Default-Start: 3 4 5
+# Default-Stop: 0 1 6
+# Short-Description: Silent Dune Firewall Service
+# Description: Silent Dune Firewall Management Service
 ### END INIT INFO
 
 # Source function library.
@@ -27,7 +28,6 @@
 
 exec="/usr/bin/sdc-firewall"
 prog="sdc-firewall"
-#config="/etc/silentdune/sdc.conf"
 
 [ -e /etc/sysconfig/$prog ] && . /etc/sysconfig/$prog
 
