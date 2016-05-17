@@ -66,10 +66,11 @@ class NodeInformation(ConsoleBase):
 
     error = False
 
-    def __init__(self):
+    def __init__(self, silent=False):
         """
         Gather all the information we need about this node.
         """
+        self.silent = silent
 
         try:
 

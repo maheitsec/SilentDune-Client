@@ -26,7 +26,7 @@ class JsonObject(object):
     Base JSON for all data objects.  Allows for converting JSON data into the object models.
     """
 
-    _json_data = False
+    # _json_data = False
 
     def __init__(self, *args, **kwargs):
         """
@@ -36,7 +36,7 @@ class JsonObject(object):
         If parameter values are in kwargs, then they are named parameters passed when the object is instantiated.
         """
         if args is not None and len(args) is not 0 and args[0] is not None:
-            self._json_data = True
+            # self._json_data = True
             for key, value in args[0].items():
                 self.__dict__[key] = value
                 # print('{0} : {1}'.format(key, value))
@@ -47,7 +47,7 @@ class JsonObject(object):
                 # print('{0} : {1}'.format(key, value))
 
     def to_json(self):
-        return json.dumps(self, default=lambda o: o.__dict__, indent=4)
+        return json.dumps(self, default=lambda o: o.__dict__, indent=3)
 
     def to_dict(self):
         data = dict()

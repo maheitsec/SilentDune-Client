@@ -22,6 +22,7 @@ import argparse
 import gettext
 import logging
 import os
+import shutil
 import subprocess
 import sys
 from subprocess import CalledProcessError
@@ -132,6 +133,8 @@ class Installer(ConsoleBase):
 
             self.service_out_file = os.path.join(path, 'sdc-firewall.service')
 
+            # shutil.copy(systemd_in_file, self.service_out_file)
+
             # Replace key words with local file locations.
             sed_args = 's/%%KILL%%/{0}/g;s/%%SDC-FIREWALL%%/{1}/g'.format(
                 self.node_info.kill.replace('/', '\/'),
@@ -162,7 +165,12 @@ class Installer(ConsoleBase):
 
         if self.node_info.sysv_installed:
             # TODO: Write the sysv service install code.
+            # Just save to the systemd user defined location until we get a selinux serivce policy built.
+            if os.path.exists('/etc/systemd/system/'):
+                path = '/etc/systemd/system/'
             pass
+
+            # http://askubuntu.com/questions/2263/chkconfig-alternative-for-ubuntu-server
 
         self.cwriteline('[OK]', 'Firewall service installed and started.')
 
@@ -291,9 +299,9 @@ class Installer(ConsoleBase):
         # The following code can only run if we are running under privileged account.
         if self.node_info.root_user:
 
-            # Create the daemon process user
-            if not self.__config.create_service_user():
-                return False
+            # # Create the daemon process user
+            # if not self.__config.create_service_user():
+            #     return False
 
             # Create the directories the daemon process uses.
             if not self.__config.create_directories():

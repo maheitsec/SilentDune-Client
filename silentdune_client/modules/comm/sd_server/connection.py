@@ -406,8 +406,7 @@ class SDSConnection (ConsoleBase):
 
     def get_bundle_machine_subsets(self, nb):
 
-        # if isinstance(nb, NodeBundle):  <-- Not working, unsure why.
-        if nb is None:
+        if not isinstance(nb, NodeBundle):
             _logger.critical('NodeBundle parameter is not valid in create_or_update_node_bundle method.')
             return None, requests.codes.teapot
 
@@ -436,7 +435,7 @@ class SDSConnection (ConsoleBase):
 
         return ol, status_code
 
-    def write_bundle_to_file(self, path, cs):
+    def write_bundle_to_file(self, path, bundle):
         """
         Write the bundle machine set data to a file.
         This process starts by looping through each of the iptable table names, then calling o.write_chains() to
@@ -446,12 +445,12 @@ class SDSConnection (ConsoleBase):
 
         files = list()
 
-        if cs is None:
+        if bundle is None:
             _logger.error('Array of chainset objects not valid.')
             return files
 
         # Write out machine sets to individual files with the slot number as the name.
-        for ms in cs:
+        for ms in bundle:
             file = os.path.join(path, u'{0}.bundle'.format(ms.slot))
 
             _logger.debug('Writting set {0} rules to -> {1}'.format(ms.slot, file))
@@ -466,7 +465,7 @@ class SDSConnection (ConsoleBase):
 
             files.append(file)
 
-            writer = IPRulesFileWriter(cs)
+            writer = IPRulesFileWriter(bundle)
             writer.write_to_file(file, v)
 
         return files

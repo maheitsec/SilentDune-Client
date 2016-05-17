@@ -100,7 +100,7 @@ class BaseModule(ConsoleBase):
 
     # Configuration File and Node Information objects.
     config = None
-    node_info = NodeInformation()
+    node_info = NodeInformation(silent=True)
 
     # Module loading priority
     priority = 100  # 0 highest -> 100 lowest

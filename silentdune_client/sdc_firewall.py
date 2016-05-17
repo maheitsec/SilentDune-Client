@@ -237,6 +237,10 @@ def run():
 
     args = parser.parse_args()
 
+    if os.getuid() != 0:
+        print('sdc-firewall: error: must be run as root')
+        sys.exit(4)
+
     # --nodaemon only valid with start action
     if args.nodaemon and args.action != 'start':
         print('sdc-firewall: error: --nodaemon option not valid with stop or restart action')

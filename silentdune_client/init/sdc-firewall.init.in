@@ -29,7 +29,8 @@
 exec="/usr/bin/sdc-firewall"
 prog="sdc-firewall"
 
-[ -e /etc/sysconfig/$prog ] && . /etc/sysconfig/$prog
+# Possible values: --debug, --config
+PROG_ARGS="--debug"
 
 lockfile=/var/lock/subsys/$prog
 
@@ -45,7 +46,7 @@ start() {
     [ -x $exec ] || exit 5
 #    [ -f $config ] || exit 6
     echo -n $"Starting $prog: "
-    daemon $exec $FIREWALLD_ARGS
+    daemon $exec $PROG_ARGS start
     retval=$?
     echo
     [ $retval -eq 0 ] && touch $lockfile
@@ -54,7 +55,7 @@ start() {
 stop() {
     user_check
     echo -n $"Stopping $prog: "
-    killproc $prog
+    $prog stop
     retval=$?
     echo
     [ $retval -eq 0 ] && rm -f $lockfile
@@ -68,7 +69,7 @@ restart() {
 reload() {
     user_check
     echo -n $"Reloading firewall: "
-    firewall-cmd --reload
+    echo -n $"Reloading no supported yet"
     retval=$?
     [ $retval -eq 0 ] && success || failure
     echo
@@ -84,12 +85,8 @@ rh_status() {
     status $prog
 }
 
-rh_status_q() {
-    rh_status >/dev/null 2>&1
-}
-
 usage() {
-    echo $"Usage: $0 {start|stop|status|restart|condrestart|try-restart|reload|force-reload}"
+    echo $"Usage: $0 {start|stop|status|restart|reload}"
 }
 
 case "$1" in
@@ -105,18 +102,10 @@ case "$1" in
         $1
         ;;
     reload)
-        rh_status_q || exit 7
-        $1
-        ;;
-    force-reload)
         force_reload
         ;;
     status)
         rh_status
-        ;;
-    condrestart|try-restart)
-        rh_status_q || exit 0
-        restart
         ;;
     usage)
         usage

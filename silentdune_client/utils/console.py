@@ -29,6 +29,8 @@ class ConsoleBase(object):
     Output messages to the console.
     """
 
+    silent = False
+
     # http://stackoverflow.com/questions/11245381/formatting-console-output
 
     def cwrite(self, message, debug_msg=None):
@@ -41,7 +43,7 @@ class ConsoleBase(object):
                 _logger.debug(message)
             else:
                 _logger.debug(debug_msg)
-        else:
+        elif not self.silent:
             sys.stdout.write(message)
             sys.stdout.flush()
 
@@ -55,6 +57,6 @@ class ConsoleBase(object):
                 _logger.debug(message)
             else:
                 _logger.debug(debug_msg)
-        else:
+        elif not self.silent:
             print(message)
             sys.stdout.flush()
