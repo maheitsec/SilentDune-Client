@@ -261,19 +261,19 @@ class BaseModule(ConsoleBase):
             # Check to see that task is a QueueTask object
             if isinstance(task, QueueTask):
 
-                _logger.debug('{0} task id: {1}.'.format(self.get_name(), task.get_task_id()))
+                # _logger.debug('{0}: received task id: {1}.'.format(self.get_name(), task.get_task_id()))
 
                 if task.get_task_id() == TASK_STOP_PROCESSING:
-                    _logger.debug('({0}) received stop signal, ending process handler.'.format(self.get_name()))
+                    _logger.debug('{0}: received stop signal, ending process handler.'.format(self.get_name()))
                     break
 
                 # Process task.
                 self.process_task(task)
 
             else:
-                _logger.debug('({0}) Received bad task object, discarding.'.format(self.get_name()))
+                _logger.debug('{0}: Received bad task object, discarding.'.format(self.get_name()))
 
-        _logger.debug('({0}) Module processing thread closed cleanly.'.format(self.get_name()))
+        _logger.debug('{0}: Module processing thread closed cleanly.'.format(self.get_name()))
 
     def send_parent_task(self, qtask):
         """
@@ -281,8 +281,10 @@ class BaseModule(ConsoleBase):
         :param qtask: QueueTask object
         :return:
         """
-        self._mqueue.put(qtask)
-
+        if self._mqueue:
+            self._mqueue.put(qtask)
+        else:
+            _logger.error('{0}: Task submitted to parent, but queue not ready.'.format(self.get_name()))
 
 def __load_modules__(base_path=None, module_path='silentdune_client/modules'):
     """

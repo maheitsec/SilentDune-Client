@@ -268,21 +268,29 @@ class SDSConnection (ConsoleBase):
         :param node:
         :return Node:
         """
-        if not isinstance(node, Node):
+        try:
+            node_d = node.to_dict()
+        except AttributeError:
             _logger.critical('Node parameter is not valid in register_node method.')
             return None, requests.codes.teapot
 
-        # Reply contains single Node record
-        reply, status_code, rq = self._make_json_request('POST', '/api/nodes/', node.to_dict())
+        try:
+            # Reply contains single Node record
+            reply, status_code, rq = self._make_json_request('POST', '/api/nodes/', node_d)
 
-        if reply is not None and status_code is not None:
+            if reply is not None and status_code is not None:
 
-            # 201 means the node record was created successfully.
-            if status_code == requests.codes.created or status_code == requests.codes.ok:
-                return Node(reply), status_code
+                # 201 means the node record was created successfully.
+                if status_code == requests.codes.created or status_code == requests.codes.ok:
+                    return Node(reply), status_code
 
-        _logger.debug('Register node failed ({0}).'.format(status_code))
-        return None, status_code
+            _logger.debug('Register node failed ({0}).'.format(status_code))
+            return None, status_code
+
+        except:
+            pass
+
+        return None, requests.codes.teapot
 
     def update_node(self, node):
         """
@@ -290,21 +298,30 @@ class SDSConnection (ConsoleBase):
         :param node:
         :return Node:
         """
-        if not isinstance(node, Node):
-            _logger.critical('Node parameter is not valid in register_node method.')
+        try:
+            node_d = node.to_dict()
+        except AttributeError:
+            _logger.critical('Node parameter is not valid in update_node method.')
             return None, requests.codes.teapot
 
-        # Reply contains single Node record
-        reply, status_code, rq = self._make_json_request('PUT', '/api/nodes/{0}/'.format(node.id), node.to_dict())
+        try:
 
-        if reply is not None and status_code is not None:
+            # Reply contains single Node record
+            reply, status_code, rq = self._make_json_request('PUT', '/api/nodes/{0}/'.format(node.id), node.to_dict())
 
-            # 200 means the node record was update successfully.
-            if status_code == requests.codes.ok:
-                return Node(reply), status_code
+            if reply is not None and status_code is not None:
 
-        _logger.debug('Update node failed ({0}).'.format(status_code))
-        return None, status_code
+                # 200 means the node record was update successfully.
+                if status_code == requests.codes.ok:
+                    return Node(reply), status_code
+
+            _logger.debug('Update node failed ({0}).'.format(status_code))
+            return None, status_code
+
+        except:
+            pass
+
+        return None, requests.codes.teapot
 
     def get_node_bundle_by_node_id(self, node_id):
         """
@@ -435,37 +452,37 @@ class SDSConnection (ConsoleBase):
 
         return ol, status_code
 
-    def write_bundle_to_file(self, path, bundle):
-        """
-        Write the bundle machine set data to a file.
-        This process starts by looping through each of the iptable table names, then calling o.write_chains() to
-        setup the custom iptables chain names for that table.  Then o.write() is called to write out the rules for
-        that table. Chain names are defined by the built-in chain name, slot number and pk id of the IPRing object.
-        """
-
-        files = list()
-
-        if bundle is None:
-            _logger.error('Array of chainset objects not valid.')
-            return files
-
-        # Write out machine sets to individual files with the slot number as the name.
-        for ms in bundle:
-            file = os.path.join(path, u'{0}.bundle'.format(ms.slot))
-
-            _logger.debug('Writting set {0} rules to -> {1}'.format(ms.slot, file))
-            with open(file, 'w') as handle:
-                handle.write('{0}\n'.format(ms.to_json()))
-
-        for v in {u'ipv4', u'ipv6'}:
-
-            file = os.path.join(path, u'{0}.rules'.format(v))
-
-            _logger.debug('Writting {0} rules to -> {1}'.format(v, file))
-
-            files.append(file)
-
-            writer = IPRulesFileWriter(bundle)
-            writer.write_to_file(file, v)
-
-        return files
+    # def write_bundle_to_file(self, path, bundle):
+    #     """
+    #     Write the bundle machine set data to a file.
+    #     This process starts by looping through each of the iptable table names, then calling o.write_chains() to
+    #     setup the custom iptables chain names for that table.  Then o.write() is called to write out the rules for
+    #     that table. Chain names are defined by the built-in chain name, slot number and pk id of the IPRing object.
+    #     """
+    #
+    #     files = list()
+    #
+    #     if bundle is None:
+    #         _logger.error('Array of chainset objects not valid.')
+    #         return files
+    #
+    #     # Write out machine sets to individual files with the slot number as the name.
+    #     for ms in bundle:
+    #         file = os.path.join(path, u'{0}.bundle'.format(ms.slot))
+    #
+    #         _logger.debug('Writting set {0} rules to -> {1}'.format(ms.slot, file))
+    #         with open(file, 'w') as handle:
+    #             handle.write('{0}\n'.format(ms.to_json()))
+    #
+    #     for v in {u'ipv4', u'ipv6'}:
+    #
+    #         file = os.path.join(path, u'{0}.rules'.format(v))
+    #
+    #         _logger.debug('Writting {0} rules to -> {1}'.format(v, file))
+    #
+    #         files.append(file)
+    #
+    #         writer = IPRulesFileWriter(bundle)
+    #         writer.write_to_file(file, v)
+    #
+    #     return files

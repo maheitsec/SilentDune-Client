@@ -33,11 +33,14 @@ from silentdune_client import modules
 from silentdune_client.models.node import Node, NodeBundle
 from silentdune_client.modules import QueueTask
 from silentdune_client.modules.comm.sd_server.connection import SDSConnection
-from silentdune_client.modules.firewall.manager import SilentDuneClientFirewallModule, TASK_FIREWALL_RELOAD_RULES
+from silentdune_client.modules.firewall.manager import SilentDuneClientFirewallModule, \
+    TASK_FIREWALL_RELOAD_RULES, TASK_FIREWALL_INSERT_RULES, TASK_FIREWALL_DELETE_RULES
 from silentdune_client.modules.comm.sd_server.auto_rules import create_tcp_server_conn_rule
 from silentdune_client.utils.misc import is_valid_ipv4_address, is_valid_ipv6_address
 
 _logger = logging.getLogger('sd-client')
+
+TASK_SEND_SERVER_ALERT = 500
 
 # Define the available Module classes.
 module_list = {
@@ -61,6 +64,7 @@ class SilentDuneServerModule(modules.BaseModule):
     # Server Connection
     _sds_conn = None
     _connected = False
+    _connection_start = False
 
     # Server objects
     _node = None
@@ -182,13 +186,13 @@ class SilentDuneServerModule(modules.BaseModule):
         # Check for valid IPv4 address
         if '.' in server:
             if not is_valid_ipv4_address(server):
-                _logger.error('Config value for "server" is invalid ip address')
+                _logger.error('{0}: Config value for "server" is invalid ip address'.format(self.get_name()))
                 return False
 
         # Check for valid IPv6 address
         if ':' in server:
             if not is_valid_ipv6_address(server):
-                _logger.error('Config value for "server" is invalid ip address')
+                _logger.error('{0}: Config value for "server" is invalid ip address'.format(self.get_name()))
                 return False
 
         self._server = config.get(self._config_section_name, 'server')
@@ -249,58 +253,68 @@ class SilentDuneServerModule(modules.BaseModule):
         # TODO: Get and Upload adapter interface list to server
         # Note: It might be better to call ifconfig instead of using netifaces to get adapter info.
 
-        self._write_bundleset_to_file()
+        # self._write_bundleset_to_file()
 
-    def _write_bundleset_to_file(self):
+    # TODO: delete this method
+    # def _write_bundleset_to_file(self):
+    #
+    #     if not self._download_bundleset():
+    #         _logger.error('Failed to download firewall rules bundle.')
+    #         return False
+    #
+    #     self._insert_server_connection_rule()
+    #
+    #     if not self._write_rule_files():
+    #         _logger.error('Failed to write firewall rules bundle to file system.')
+    #         return False
+    #
+    #     _logger.info('Successfully downloaded firewall rules bundle.')
+    #
+    #     return True
 
-        if not self._download_bundleset():
-            _logger.error('Failed to download firewall rules bundle.')
-            return False
-
-        self._insert_server_connection_rule()
-
-        if not self._write_rule_files():
-            _logger.error('Failed to write firewall rules bundle to file system.')
-            return False
-
-        _logger.info('Successfully downloaded firewall rules bundle.')
-
-        return True
-
-    def _service_connect_to_server(self):
+    def service_connect_to_server(self):
         """
         Attempt to connect to the silent dune server.
         :return:
         """
+
+        self._connected = False
+        self._connection_start = False
 
         server = self.config.get(self._config_section_name, 'server')
         port = self.config.get(self._config_section_name, 'port')
         no_tls = False if self.config.get(self._config_section_name, 'use_tls').lower() == 'yes' else True
 
         self._sds_conn = SDSConnection(server, no_tls, port)
-        _logger.info('Server -> {0}:{1} tls: {2}'.format(server, port, no_tls))
+        _logger.info('{0}: Server -> {1}:{2} tls: {3}'.format(self.get_name(), server, port, no_tls))
 
         if self._sds_conn.connect_with_machine_id(self.node_info.machine_id):
             self._connected = True
+            self._connection_start = True
             self._node, status_code = self._sds_conn.get_node_by_machine_id(self.node_info.machine_id)
         else:
-            _logger.warning('Failed to connect with Silent Dune server, will attempt reconnection.')
+            _logger.warning('{0}: Failed to connect with server, will attempt reconnection.'.format(self.get_name()))
 
         return self._connected
 
     def service_startup(self):
-        _logger.debug('{0} module startup called'.format(self.get_name()))
+        _logger.debug('{0}: module startup called'.format(self.get_name()))
 
         if not self.validate_config(self.config):
-            _logger.error('{0} module configuration validation failed.'.format(self.get_name()))
+            _logger.error('{0}: module configuration validation failed.'.format(self.get_name()))
             return False
 
-        self._service_connect_to_server()
+        self.service_connect_to_server()
 
         return True
 
     def service_shutdown(self):
-        _logger.debug('{0} module shutdown called'.format(self.get_name()))
+        _logger.debug('{0}: module shutdown called'.format(self.get_name()))
+
+        # Notify the server we are no longer active.
+        if self._connected:
+            self._node.active = False
+            self.update_server_node_info()
 
         return True
 
@@ -310,37 +324,82 @@ class SilentDuneServerModule(modules.BaseModule):
         if not self._connected:
             if self.t_seconds > self._t_connection_retry and self.t_seconds % 60 == 0.0:
                 self._t_connection_retry = self.t_seconds
-                self._service_connect_to_server()
+                self.service_connect_to_server()
 
-        else:
+        if self._connected:
 
-            # Check to see if the node bundle has changed.
-            if self.t_seconds > self._t_bundle_check and self.t_seconds % (self._node.polling_frequency * 60) == 0.0:
+            if self._connection_start:
+
+                # Notify the server we are active now.
+                self._node.active = True
+                self.update_server_node_info()
+
+                # Update our firewall with rules from the server.
+                self.update_node_firewall_rules_from_server()
+                self._connection_start = False
+
+            # Check to see if the node rule bundle information has changed.
+            if self.t_seconds > self._t_bundle_check and self.t_seconds % (self._node.polling_interval * 60) == 0.0:
                 self._t_bundle_check = self.t_seconds
                 self._node, status_code = self._sds_conn.get_node_by_machine_id(self.node_info.machine_id)
 
-            # Check to see if we need to update our firewall rules bundle.
-            if self._node.sync:
-                _logger.info('Found signal to update the firewall rules bundle.')
-
-                # Get updated bundle information.
-                self._node_bundle, status_code = self._sds_conn.get_node_bundle_by_node_id(self._node.id)
-                self._bundle, status_code = self._sds_conn.get_bundle_by_id(self._node_bundle.bundle)
-
-                if self._write_bundleset_to_file():
-
-                    # Notify the firewall module to reload the rules.
-                    task = QueueTask(TASK_FIREWALL_RELOAD_RULES,
-                                     src_module=self.get_name(),
-                                     dest_module=SilentDuneClientFirewallModule().get_name())
-                    self.send_parent_task(task)
+                # Check to see if we need to update our firewall rules bundle.
+                if self._node.sync:
+                    _logger.info('Found signal to update the firewall rules bundle.')
+                    self.update_node_firewall_rules_from_server()
 
                     # Update our information with the server.
                     self._node.sync = 0
-                    node, status_code = self._sds_conn.update_node(self._node)
+                    self.update_server_node_info()
 
-                    if node and status_code == requests.codes.ok:
-                        self._node = node
+    def update_server_node_info(self):
+
+        node, status_code = self._sds_conn.update_node(self._node)
+
+        if node and status_code == requests.codes.ok:
+            self._node = node
+
+    def update_node_firewall_rules_from_server(self):
+        """
+        Retrieve the node bundle rules from the server and send them to the Firewall module.
+        :return:
+        """
+
+        # Get updated bundle information.
+        self._node_bundle, status_code = self._sds_conn.get_node_bundle_by_node_id(self._node.id)
+        self._bundle, status_code = self._sds_conn.get_bundle_by_id(self._node_bundle.bundle)
+
+        if not self._download_bundleset():
+            _logger.error('Failed to download firewall rules bundle.')
+            self._connected = False
+            return False
+
+        self._insert_server_connection_rule()
+
+        if self._bundle_machine_subsets and len(self._bundle_machine_subsets) > 0:
+
+            # Notify the firewall module to reload the rules.
+            task = QueueTask(TASK_FIREWALL_INSERT_RULES,
+                             src_module=self.get_name(),
+                             dest_module=SilentDuneClientFirewallModule().get_name(),
+                             data=self._bundle_machine_subsets)
+            self.send_parent_task(task)
+
+            # Notify the firewall module to reload the rules.
+            # task = QueueTask(TASK_FIREWALL_RELOAD_RULES,
+            #                  src_module=self.get_name(),
+            #                  dest_module=SilentDuneClientFirewallModule().get_name())
+            # self.send_parent_task(task)
+
+            # Reset the node rule bundle check timer
+            self._t_bundle_check = self.t_seconds
+
+        else:
+            _logger.error('{0}: No rules downloaded from server, unable to update firewall module.'.format(
+                self.get_name()))
+            return False
+
+        return True
 
         # TODO: Port knocker event triggers.  https://github.com/moxie0/knockknock
 
@@ -365,10 +424,11 @@ class SilentDuneServerModule(modules.BaseModule):
         self._node, status_code = self._sds_conn.get_node_by_machine_id(self.node_info.machine_id)
 
         if status_code == requests.codes.ok and self._node and self._node.id:
-            _logger.warning('Node already registered, using previously registered node information.')
+            _logger.warning('{0}: Node already registered, using previously registered node info.'.format(
+                self.get_name()))
             return True
 
-        self.cwrite('Registering Node...  ')
+        self.cwrite('{0}: Registering Node...  '.format(self.get_name()))
 
         node = Node(
             platform=self.node_info.firewall_platform,
@@ -406,15 +466,15 @@ class SilentDuneServerModule(modules.BaseModule):
 
             self.cwriteline('[Failed]', 'Unable to find rule bundle named "{0}".'.format(self._bundle_name))
 
-            _logger.warning(_("Unable to find the rule bundle specified. The installer can try to lookup "  # noqa
-                              "and use the default server rule bundle."))  # noqa
-
-            self.cwrite(_('Do you want to use the server default rule bundle? [y/N]:'))  # noqa
-            result = sys.stdin.read(1)
-
-            if result not in {'y', 'Y'}:
-                _logger.debug('User aborting installation process.')
-                return False
+            # _logger.warning(_("Unable to find the rule bundle specified. The installer can try to lookup "  # noqa
+            #                   "and use the default server rule bundle."))  # noqa
+            #
+            # self.cwrite(_('Do you want to use the server default rule bundle? [y/N]:'))  # noqa
+            # result = sys.stdin.read(1)
+            #
+            # if result not in {'y', 'Y'}:
+            #     _logger.debug('User aborting installation process.')
+            #     return False
 
         self.cwrite('Looking up the server default rule bundle...')
 
@@ -470,56 +530,58 @@ class SilentDuneServerModule(modules.BaseModule):
 
         self._bundle_machine_subsets = ol
 
-    def _write_rule_files(self):
-        """
-        Write to file bundle rules in iptables save file format.
-        :return:
-        """
+    # TODO: Move this method to the Firewall module.
+    # def _write_rule_files(self):
+    #     """
+    #     Write to file bundle rules in iptables save file format.
+    #     :return:
+    #     """
+    #
+    #     files = self._sds_conn.write_bundle_to_file(self.node_info.config_root, self._bundle_machine_subsets)
+    #
+    #     if len(files) == 0:
+    #         self.cwriteline('[Error]', 'Failed to write bundle set to file.')
+    #         return False
+    #
+    #     self.cwriteline('[OK]', 'Successfully wrote bundle set rules to file.')
+    #
+    #     self._validate_rule_files(files)
+    #
+    #     return True
 
-        files = self._sds_conn.write_bundle_to_file(self.node_info.config_root, self._bundle_machine_subsets)
-
-        if len(files) == 0:
-            self.cwriteline('[Error]', 'Failed to write bundle set to file.')
-            return False
-
-        self.cwriteline('[OK]', 'Successfully wrote bundle set rules to file.')
-
-        self._validate_rule_files(files)
-
-        return True
-
-    def _validate_rule_files(self, files):
-        """
-        Validate multiple iptables rule save files.
-        :param files: List of path+filenames to run iptables-restore --test on.
-        :return:
-        """
-
-        if not self.node_info.root_user:
-            _logger.warning('Unable to validate rules, not running as privileged user.')
-            return True
-
-        self.cwrite('Validating bundle set rules...')
-
-        # Loop through files and test the validity of the file.
-        for file in iter(files):
-
-            if not os.path.exists(file):
-                _logger.critical('Rule file does not exist.')
-                return False
-
-            cmd = '{0} --test < "{1}"'.format(self.node_info.iptables_restore, file)
-
-            try:
-                # TODO: Change this to a process.call and just look at the return code.
-                check_output(cmd, shell=True)
-            except CalledProcessError:
-                self.cwriteline('[Failed]', 'Rule set iptables test failed "{0}"'.format(file))
-                # TODO: Enable this return later.
-                # return False
-
-        self.cwriteline('[OK]', 'Rule validation successfull.')
-
-        return True
+    # TODO: Move this method to the Firewall module.
+    # def _validate_rule_files(self, files):
+    #     """
+    #     Validate multiple iptables rule save files.
+    #     :param files: List of path+filenames to run iptables-restore --test on.
+    #     :return:
+    #     """
+    #
+    #     if not self.node_info.root_user:
+    #         _logger.warning('Unable to validate rules, not running as privileged user.')
+    #         return True
+    #
+    #     self.cwrite('Validating bundle set rules...')
+    #
+    #     # Loop through files and test the validity of the file.
+    #     for file in iter(files):
+    #
+    #         if not os.path.exists(file):
+    #             _logger.critical('Rule file does not exist.')
+    #             return False
+    #
+    #         cmd = '{0} --test < "{1}"'.format(self.node_info.iptables_restore, file)
+    #
+    #         try:
+    #             # TODO: Change this to a process.call and just look at the return code.
+    #             check_output(cmd, shell=True)
+    #         except CalledProcessError:
+    #             self.cwriteline('[Failed]', 'Rule set iptables test failed "{0}"'.format(file))
+    #             # TODO: Enable this return later.
+    #             # return False
+    #
+    #     self.cwriteline('[OK]', 'Rule validation successfull.')
+    #
+    #     return True
 
 

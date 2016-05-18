@@ -36,8 +36,9 @@ class Node(JsonObject):
     last_connection = None  # Last connection datetime stamp.
     sync = None  # True if node needs to download new rule bundleset and update its information on the server.
     notes = None  # Notes about this node
-    node_state = None  # A string of values representing the current node state. IE: 'active normal'
-    polling_frequency = None  # A numeric value representing the number of minutes the node should check the server.
+    active = None  # Node firewall is actively running.
+    locked = None  # Node should be in locked down or not.
+    polling_interval = None  # A numeric value representing the number of minutes the node should check the server.
     fernet_key = None  # A fernet encryption key.
 
 
