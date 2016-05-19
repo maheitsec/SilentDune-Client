@@ -26,6 +26,7 @@ import requests
 
 from silentdune_client.models.iptables_rules import IPMachineSubset, Bundle, IPRulesFileWriter
 from silentdune_client.models.node import Node, NodeBundle
+from silentdune_client.models.global_preferences import GlobalPreferences
 from silentdune_client.utils.console import ConsoleBase
 
 _logger = logging.getLogger('sd-client')
@@ -260,6 +261,25 @@ class SDSConnection (ConsoleBase):
                 return Node(reply[0]), status_code
 
         _logger.error('Node lookup request failed.')
+        return None, status_code
+
+    def get_global_preferences(self):
+        """
+        Request GlobalPreferences object from server.
+        :return Node object:
+        """
+
+        url = '/api/globals/'
+
+        # Reply contains dict array of Node records.  Reply array should be empty or contain one Node record.
+        reply, status_code, rq = self._make_json_request('GET', url)
+
+        # If we have a good code and no data, then the node has not been registered yet.
+        if status_code == requests.codes.ok:
+            if reply is not None and len(reply) != 0:
+                return GlobalPreferences(reply[0]), status_code
+
+        _logger.error('Global preferences lookup request failed.')
         return None, status_code
 
     def register_node(self, node):

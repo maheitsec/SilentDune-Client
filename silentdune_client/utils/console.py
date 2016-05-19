@@ -44,6 +44,7 @@ class ConsoleBase(object):
             else:
                 _logger.debug(debug_msg)
         elif not self.silent:
+            # TODO: If silent, add the module name (prefix?) to the message
             sys.stdout.write(message)
             sys.stdout.flush()
 
@@ -58,5 +59,6 @@ class ConsoleBase(object):
             else:
                 _logger.debug(debug_msg)
         elif not self.silent:
+            # TODO: If silent, add the module name (prefix?) to the message
             print(message)
             sys.stdout.flush()
