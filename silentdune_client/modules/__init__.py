@@ -258,19 +258,17 @@ class BaseModule(ConsoleBase):
                 self.process_loop()  # Call the processing loop for module idle processing.
                 continue
 
-            # Check to see that task is a QueueTask object
-            if isinstance(task, QueueTask):
-
+            try:
                 # _logger.debug('{0}: received task id: {1}.'.format(self.get_name(), task.get_task_id()))
-
                 if task.get_task_id() == TASK_STOP_PROCESSING:
                     _logger.debug('{0}: received stop signal, ending process handler.'.format(self.get_name()))
+                    self.service_shutdown()
                     break
 
                 # Process task.
                 self.process_task(task)
 
-            else:
+            except:
                 _logger.debug('{0}: Received bad task object, discarding.'.format(self.get_name()))
 
         _logger.debug('{0}: Module processing thread closed cleanly.'.format(self.get_name()))

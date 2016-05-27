@@ -38,9 +38,16 @@ class NodeInformation(ConsoleBase):
     pgrep = None
     sed = None
     kill = None
+
+    # ipv4 commands
     iptables_exec = None
     iptables_save = None
     iptables_restore = None
+
+    # ipv6 commands
+    ip6tables_exec = None
+    ip6tables_save = None
+    ip6tables_restore = None
 
     # Configuration Items
     root_user = (os.getuid() == 0)
@@ -130,9 +137,14 @@ class NodeInformation(ConsoleBase):
         self.pgrep = self._which_wrapper('pgrep')
         self.sed = self._which_wrapper('sed')
         self.kill = self._which_wrapper('kill')
+
         self.iptables_exec = self._which_wrapper('iptables')
         self.iptables_save = self._which_wrapper('iptables-save')
         self.iptables_restore = self._which_wrapper('iptables-restore')
+
+        self.ip6tables_exec = self._which_wrapper('ip6tables')
+        self.ip6tables_save = self._which_wrapper('ip6tables-save')
+        self.ip6tables_restore = self._which_wrapper('ip6tables-restore')
 
         if self.ps is None or self.pgrep is None:
             _logger.critical('Unable to determine which services are running on this machine.')

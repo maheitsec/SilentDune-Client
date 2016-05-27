@@ -140,6 +140,13 @@ class SilentDuneClientFirewallModule(modules.BaseModule):
                 self.write_rules_to_iptables_file()
                 self.restore_iptables()
 
+            if t_id == TASK_FIREWALL_DELETE_RULES:
+                _logger.debug('{0}: {1}: received rules from module {2}.'.format(
+                    self.get_name(), 'TASK_FIREWALL_DELETE_RULES', task.get_sender()))
+                self.del_firewall_rule(task.get_data())
+                self.write_rules_to_iptables_file()
+                self.restore_iptables()
+
     def load_rule_bundles(self):
         """
         Load the user defined json bundle files, each file is a IPMachineSubset json object.
@@ -152,7 +159,7 @@ class SilentDuneClientFirewallModule(modules.BaseModule):
                     with open(os.path.join(self.node_info.config_root, file)) as handle:
                         mss = IPMachineSubset(handle)
                         # only load user defined slot range numbers.
-                        if 200 < mss.slot < 980:
+                        if 200 < mss.slot < 9000:
                             ol.append(mss)
                 except:
                     _logger.error('{0}: Bundle file is corrupt, unable to load {1}.'.format(self.get_name(), file))
@@ -177,7 +184,10 @@ class SilentDuneClientFirewallModule(modules.BaseModule):
                     with open(file) as handle:
                         data = handle.read()
 
-                    p = subprocess.Popen([self.node_info.iptables_restore, '-c'], stdin=subprocess.PIPE)
+                    if v == u'ipv4':
+                        p = subprocess.Popen([self.node_info.iptables_restore, '-c'], stdin=subprocess.PIPE)
+                    else:
+                        p = subprocess.Popen([self.node_info.ip6tables_restore, '-c'], stdin=subprocess.PIPE)
                     p.communicate(data)
                     result = p.wait()
 
@@ -204,7 +214,11 @@ class SilentDuneClientFirewallModule(modules.BaseModule):
 
             file = os.path.join(self.node_info.config_root, u'{0}.rules'.format(v))
             try:
-                p = subprocess.Popen([self.node_info.iptables_save, '-c'], stdout=subprocess.PIPE)
+                if v == u'ipv4':
+                    p = subprocess.Popen([self.node_info.iptables_save, '-c'], stdout=subprocess.PIPE)
+                else:
+                    p = subprocess.Popen([self.node_info.ip6tables_save, '-c'], stdout=subprocess.PIPE)
+
                 data = p.communicate()[0]
                 result = p.wait()
 
@@ -230,16 +244,17 @@ class SilentDuneClientFirewallModule(modules.BaseModule):
         :return:
         """
         try:
-            nmss = hashlib.sha1(obj.to_json())
+            nmss = hashlib.sha1(obj.to_json()).hexdigest()
 
             # Loop through the current rules and see if the rule already exists.
             for mss in self._rules:
-                if hashlib.sha1(mss.to_json()) == nmss:
-                    _logger.debug('{0}: Rule has already been added to rule list.'.format(self.get_name()))
+                if hashlib.sha1(mss.to_json()).hexdigest() == nmss:
+                    # _logger.debug('{0}: Rule has already been added to rule list.'.format(self.get_name()))
                     return True
 
             self._rules.append(obj)
             self._rules.sort(key=lambda x: x.slot)
+
             return True
 
         except AttributeError:
@@ -249,6 +264,8 @@ class SilentDuneClientFirewallModule(modules.BaseModule):
                 if len(obj) > 0:
                     for o in obj:
                         self.add_firewall_rule(o)
+                    for mss in self._rules:
+                        _logger.debug('{0} Adding rule ({1}): {2}'.format(self.get_name(), mss.slot, mss.name))
                     _logger.debug('{0}: Added {1} IPTablesMachineSubset rules.'.format(self.get_name(), len(obj)))
                     return True
             except TypeError:
@@ -264,11 +281,11 @@ class SilentDuneClientFirewallModule(modules.BaseModule):
         """
 
         try:
-            nmss = hashlib.sha1(obj.to_json())
+            nmss = hashlib.sha1(obj.to_json()).hexdigest()
 
             # Loop through the current rules and see if the rule already exists.
             for mss in self._rules:
-                if hashlib.sha1(mss.to_json()) == nmss:
+                if hashlib.sha1(mss.to_json()).hexdigest() == nmss:
                     self._rules.remove(mss)
                     self._rules.sort(key=lambda x: x.slot)
                     return True
@@ -293,22 +310,20 @@ class SilentDuneClientFirewallModule(modules.BaseModule):
         Output to file in iptables format our list of IPTablesMachineSubset objects.
         :return:
         """
-
-        files = list()
-
         for v in {u'ipv4', u'ipv6'}:
             file = os.path.join(self.node_info.config_root, u'{0}.rules'.format(v))
 
             _logger.debug('{0}: Writting {1} rules to -> {2}'.format(self.get_name(), v, file))
 
-            files.append(file)
-
             writer = IPRulesFileWriter(self._rules)
             writer.write_to_file(file, v)
 
-        return self.validate_rule_files(files)
+            if not self.validate_rule_files(v, file):
+                return False
 
-    def validate_rule_files(self, files):
+        return True
+
+    def validate_rule_files(self, protocol, file):
         """
         Validate multiple iptables rule save files.
         :param files: List of path+filenames to run iptables-restore --test on.
@@ -320,26 +335,28 @@ class SilentDuneClientFirewallModule(modules.BaseModule):
             return True
 
         # Loop through files and test the validity of the file.
-        for file in iter(files):
+        if not os.path.exists(file):
+            _logger.error('{0} {1} save file ({2}) does not exist.'.format(self.get_name(), protocol, file))
+            return False
 
-            if not os.path.exists(file):
-                _logger.error('{0} iptables save file ({1}) does not exist.'.format(self.get_name(), file))
-                continue
+        with open(file) as handle:
+            data = handle.read()
 
-            with open(file) as handle:
-                data = handle.read()
-
+        if protocol == u'ipv4':
             p = subprocess.Popen([self.node_info.iptables_restore, '--test'], stdin=subprocess.PIPE)
-            p.communicate(data)
-            result = p.wait()
+        else:
+            p = subprocess.Popen([self.node_info.ip6tables_restore, '--test'], stdin=subprocess.PIPE)
 
-            if result:
-                _logger.error('{0}: iptables validation failed on iptables save file: {1}'.format(
-                    self.get_name(), file))
+        p.communicate(data)
+        result = p.wait()
 
-                if TASK_SEND_SERVER_ALERT:
-                    # TODO: Notify server of error.
-                    pass
+        if result:
+            _logger.error('{0}: {1} validation failed on iptables save file: {2}'.format(
+                self.get_name(), protocol, file))
+
+            if TASK_SEND_SERVER_ALERT:
+                # TODO: Notify server of error.
+                pass
 
         return True
 

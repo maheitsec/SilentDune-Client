@@ -134,7 +134,6 @@ def run():
             """
             for mod in mods:
 
-                mod.service_shutdown()
                 name = mod.get_name()
 
                 if cprocs[name] and cprocs[name].is_alive():

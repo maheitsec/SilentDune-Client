@@ -23,7 +23,7 @@ from silentdune_client.builders import iptables as ipt
 from silentdune_client.utils.misc import is_valid_ipv4_address, is_valid_ipv6_address
 
 # TODO: Move this function into the firewall module.
-def create_tcp_server_conn_rule(addr, port, transport=ipt.TRANSPORT_AUTO, desc=''):
+def create_tcp_server_conn_rule(addr, port, transport=ipt.TRANSPORT_AUTO, slot=120, desc=''):
     """
     Create a rule that allows access to the given addr and port.
     :param addr: IP address, not host name.
@@ -51,7 +51,7 @@ def create_tcp_server_conn_rule(addr, port, transport=ipt.TRANSPORT_AUTO, desc='
 
     return ipt.get_machine_subset(
         desc,
-        10,
+        slot,
         [
             ipt.get_chain(
                 'filter',

@@ -25,5 +25,9 @@ class GlobalPreferences(JsonObject):
     """
     Represents the NodeBundleSerializer json schema
     """
+    # Server API fields
     lockdown_slot_level = None  # Represents the maximum slot level that should be used during lock down mode.
     polling_interval = None  # The global setting for node polling interval.
+
+    # Built in fields
+    rejection_slot_level = 9900  # Represents the rejection rules slot level, these are not filtered during lock down.

@@ -234,12 +234,14 @@ class SDSConnection (ConsoleBase):
                     self.authenticated = True
                     self.cwriteline('[OK]', 'Successfully authenticated with server.')
                     return True
+            else:
+                _logger.error('Node authentication, bad server response: {0}'.format(status_code))
 
         except requests.RequestException:
             _logger.error('Node authentication request attempt failed')
 
         self.authenticated = False
-        self.cwriteline('[Error]', 'Failed to authenticated with server.')
+        self.cwriteline('[Error]', 'Failed to authenticate with server.')
 
         return False
 
@@ -274,7 +276,6 @@ class SDSConnection (ConsoleBase):
         # Reply contains dict array of Node records.  Reply array should be empty or contain one Node record.
         reply, status_code, rq = self._make_json_request('GET', url)
 
-        # If we have a good code and no data, then the node has not been registered yet.
         if status_code == requests.codes.ok:
             if reply is not None and len(reply) != 0:
                 return GlobalPreferences(reply[0]), status_code
@@ -312,22 +313,17 @@ class SDSConnection (ConsoleBase):
 
         return None, requests.codes.teapot
 
-    def update_node(self, node):
+    def update_node(self, node_id, data):
         """
-        Update Node information on server.
-        :param node:
+        Update Node information on server.  Currently only "active" and "sync" fields should be updated.
+        :param data: Dictionary with values for "active" and/or "sync" node fields.
         :return Node:
         """
         try:
-            node_d = node.to_dict()
-        except AttributeError:
-            _logger.critical('Node parameter is not valid in update_node method.')
-            return None, requests.codes.teapot
-
-        try:
-
             # Reply contains single Node record
-            reply, status_code, rq = self._make_json_request('PUT', '/api/nodes/{0}/'.format(node.id), node.to_dict())
+            reply, status_code, rq = self._make_json_request('PUT', '/api/nodes/{0}/'.format(node_id), data)
+
+            # _logger.debug('Node Update Request: {0}: {1}'.format(status_code, reply))
 
             if reply is not None and status_code is not None:
 
@@ -339,6 +335,8 @@ class SDSConnection (ConsoleBase):
             return None, status_code
 
         except:
+            raise
+            # _logger.debug('ex: {0}: {1}'.format(status_code, reply))
             pass
 
         return None, requests.codes.teapot
@@ -459,7 +457,7 @@ class SDSConnection (ConsoleBase):
             # Iterate over the reply to get our machine subset records.
             for o in reply:
 
-                url = '/api/iptables/machine_subsets/{0}/'.format(o['id'])
+                url = '/api/iptables/machine_subsets/{0}/'.format(o['machine_subset'])
 
                 # Reply contains single IPMachineSubset record.
                 reply, status_code, rq = self._make_json_request('GET', url)

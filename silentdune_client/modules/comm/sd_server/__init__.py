@@ -22,6 +22,7 @@ import logging
 import os
 import platform
 import pkg_resources
+from random import random
 import requests
 import socket
 import sys
@@ -31,6 +32,7 @@ from cryptography.fernet import Fernet
 
 from silentdune_client import modules
 from silentdune_client.models.node import Node, NodeBundle
+from silentdune_client.models.global_preferences import GlobalPreferences
 from silentdune_client.modules import QueueTask
 from silentdune_client.modules.comm.sd_server.connection import SDSConnection
 from silentdune_client.modules.firewall.manager import SilentDuneClientFirewallModule, \
@@ -71,12 +73,19 @@ class SilentDuneServerModule(modules.BaseModule):
     _bundle = None
     _node_bundle = None
     _bundle_machine_subsets = None
+    _globals = None
 
     # Timed events.
     _t_connection_retry = 0
-    _t_bundle_check = 0  # Delay 10 seconds before first check
+    _t_next_check = 0  # Used to calculate next time we should contact the server.
+    # Random number of seconds between -30 and 30 to make sure all nodes do not
+    # contact the server at the same time.
+    _t_random_seconds = int((random() - 0.5) * 60.0)
 
     priority = 30
+
+    # Status
+    _locked = False
 
     def __init__(self):
 
@@ -241,6 +250,8 @@ class SilentDuneServerModule(modules.BaseModule):
         if not self._sds_conn.connect_with_password(self._user, self._password):
             return False
 
+        self.get_global_preferences()
+
         if not self._register_node():
             return False
 
@@ -313,8 +324,7 @@ class SilentDuneServerModule(modules.BaseModule):
 
         # Notify the server we are no longer active.
         if self._connected:
-            self._node.active = False
-            self.update_server_node_info()
+            self.update_server_node_info(active=False)
 
         return True
 
@@ -330,34 +340,103 @@ class SilentDuneServerModule(modules.BaseModule):
 
             if self._connection_start:
 
+                # Get the global preferences
+                self.get_global_preferences()
+
                 # Notify the server we are active now.
                 self._node.active = True
-                self.update_server_node_info()
+                self.update_server_node_info(active=True)
+
+                # Set our lock down mode value.
+                self.set_lockdown_mode()
 
                 # Update our firewall with rules from the server.
                 self.update_node_firewall_rules_from_server()
+                self.set_next_check_time()
+
                 self._connection_start = False
 
             # Check to see if the node rule bundle information has changed.
-            if self.t_seconds > self._t_bundle_check and self.t_seconds % (self._node.polling_interval * 60) == 0.0:
-                self._t_bundle_check = self.t_seconds
+            # if self.t_seconds > self._t_bundle_check and self.t_seconds % (self._node.polling_interval * 60) == 0.0:
+            if self.t_seconds > self._t_next_check:
+
+                self.set_next_check_time()
                 self._node, status_code = self._sds_conn.get_node_by_machine_id(self.node_info.machine_id)
 
                 # Check to see if we need to update our firewall rules bundle.
                 if self._node.sync:
-                    _logger.info('Found signal to update the firewall rules bundle.')
+                    _logger.info('{0}: Found signal to update the firewall rules bundle.'.format(self.get_name()))
+
+                    self.set_lockdown_mode()
                     self.update_node_firewall_rules_from_server()
 
                     # Update our information with the server.
-                    self._node.sync = 0
-                    self.update_server_node_info()
+                    self.update_server_node_info(sync=False)
 
-    def update_server_node_info(self):
+    def set_lockdown_mode(self):
+        """
+        Set the lock down mode
+        :return:
+        """
+        # Check locked down mode.
+        if not self._locked and self._node.locked:
+            _logger.warning('System is now in lock down mode.')
+            self._locked = True
 
-        node, status_code = self._sds_conn.update_node(self._node)
+        if self._locked and not self._node.locked:
+            _logger.warning('System is no longer in lock down mode.')
+            self._locked = False
 
-        if node and status_code == requests.codes.ok:
-            self._node = node
+    def set_next_check_time(self):
+        """
+        Set the next time we should check the server.
+        :return:
+        """
+        # Setup time for next check.
+        # self._t_next_check = self.t_seconds + ((self._node.polling_interval * 60) + self._t_random_seconds)
+
+        # _logger.debug('Next server check in {0} seconds.'.format(
+        #    (self._node.polling_interval * 60) + self._t_random_seconds
+        # ))
+
+        self._t_next_check = self.t_seconds + 2
+
+    def get_global_preferences(self):
+
+        self._globals, status_code = self._sds_conn.get_global_preferences()
+
+        if not globals or status_code != requests.codes.ok:
+            _logger.error('Failed to download global preferences. Err: {0}'.format(status_code))
+            self._globals = GlobalPreferences(lockdown_slot_level=120)
+            return False
+
+        return True
+
+    def update_server_node_info(self, **kwargs):
+
+        # _logger.debug(self._node.to_json())
+
+        data = {u'machine_id': self._node.machine_id}  # machine_id is always required to update a node data record.
+
+        if 'sync' in kwargs:
+            data[u'sync'] = kwargs['sync']
+            self._node.sync = kwargs['sync']
+
+        if 'active' in kwargs:
+            self._node.active = kwargs['active']
+            data[u'active'] = kwargs['active']
+        else:
+            data[u'active'] = self._node.active
+
+        reply, status_code = self._sds_conn.update_node(self._node.id, data)
+
+        # _logger.debug(self._node.to_json())
+
+        if not self._node or status_code != requests.codes.ok:
+            _logger.error('{0}: Failed to update node information.'.format(self.get_name()))
+            return False
+
+        return True
 
     def update_node_firewall_rules_from_server(self):
         """
@@ -365,12 +444,23 @@ class SilentDuneServerModule(modules.BaseModule):
         :return:
         """
 
+        # TODO: Save current bundle machine subsets and then look for any orphaned sets and remove them
+        # from the firewall.
+
+        if self._bundle_machine_subsets:
+            # Until the orphan rule check is in place, just tell the firewall to delete all rules.
+            task = QueueTask(TASK_FIREWALL_DELETE_RULES,
+                             src_module=self.get_name(),
+                             dest_module=SilentDuneClientFirewallModule().get_name(),
+                             data=self._bundle_machine_subsets)
+            self.send_parent_task(task)
+
         # Get updated bundle information.
         self._node_bundle, status_code = self._sds_conn.get_node_bundle_by_node_id(self._node.id)
         self._bundle, status_code = self._sds_conn.get_bundle_by_id(self._node_bundle.bundle)
 
         if not self._download_bundleset():
-            _logger.error('Failed to download firewall rules bundle.')
+            _logger.error('{0}: Failed to download firewall rules bundle.'.format(self.get_name()))
             self._connected = False
             return False
 
@@ -378,11 +468,20 @@ class SilentDuneServerModule(modules.BaseModule):
 
         if self._bundle_machine_subsets and len(self._bundle_machine_subsets) > 0:
 
+            # Check to see if we are in lockdown mode. If so filter out all
+            if self._locked:
+                data = list()
+                for i in self._bundle_machine_subsets:
+                    if i.slot <= self._globals.lockdown_slot_level or i.slot >= self._globals.rejection_slot_level:
+                        data.append(i)
+            else:
+                data = self._bundle_machine_subsets
+
             # Notify the firewall module to reload the rules.
             task = QueueTask(TASK_FIREWALL_INSERT_RULES,
                              src_module=self.get_name(),
                              dest_module=SilentDuneClientFirewallModule().get_name(),
-                             data=self._bundle_machine_subsets)
+                             data=data)
             self.send_parent_task(task)
 
             # Notify the firewall module to reload the rules.
@@ -392,7 +491,7 @@ class SilentDuneServerModule(modules.BaseModule):
             # self.send_parent_task(task)
 
             # Reset the node rule bundle check timer
-            self._t_bundle_check = self.t_seconds
+            self._t_next_check = self.t_seconds
 
         else:
             _logger.error('{0}: No rules downloaded from server, unable to update firewall module.'.format(
@@ -438,7 +537,8 @@ class SilentDuneServerModule(modules.BaseModule):
             hostname=socket.gethostname(),
             python_version=sys.version.replace('\n', ''),
             machine_id=self.node_info.machine_id,
-            fernet_key=Fernet.generate_key().decode('UTF-8')
+            fernet_key=Fernet.generate_key().decode('UTF-8'),
+            polling_interval=self._globals.polling_interval
         )
 
         # Attempt to register this node on the SD server.
@@ -520,7 +620,7 @@ class SilentDuneServerModule(modules.BaseModule):
         Create machine subset to allow this node to access the Silent Dune server and then insert it into the bundle.
         :return:
         """
-        ms = create_tcp_server_conn_rule(self._server, self._port)
+        ms = create_tcp_server_conn_rule(self._server, self._port, slot=120, desc='Silent Dune Server Access')
 
         ol = list()
         ol.append(ms)
