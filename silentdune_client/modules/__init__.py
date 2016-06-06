@@ -284,6 +284,7 @@ class BaseModule(ConsoleBase):
         else:
             _logger.error('{0}: Task submitted to parent, but queue not ready.'.format(self.get_name()))
 
+
 def __load_modules__(base_path=None, module_path='silentdune_client/modules'):
     """
     Search for modules to load.  Modules must reside under the modules directory and

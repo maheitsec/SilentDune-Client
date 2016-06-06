@@ -19,12 +19,9 @@
 #
 
 
-import grp
 import logging
 import os
-import pwd
 from collections import OrderedDict
-from subprocess import check_output, CalledProcessError
 
 from silentdune_client.utils.misc import determine_config_root, get_active_firewall, rmdir
 

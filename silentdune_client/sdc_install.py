@@ -22,7 +22,6 @@ import argparse
 import gettext
 import logging
 import os
-import shutil
 import subprocess
 import sys
 from subprocess import CalledProcessError

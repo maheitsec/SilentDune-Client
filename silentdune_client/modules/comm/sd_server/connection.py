@@ -19,12 +19,11 @@
 #
 
 import logging
-import os
 import socket
 
 import requests
 
-from silentdune_client.models.iptables_rules import IPMachineSubset, Bundle, IPRulesFileWriter
+from silentdune_client.models.iptables_rules import IPMachineSubset, Bundle
 from silentdune_client.models.node import Node, NodeBundle
 from silentdune_client.models.global_preferences import GlobalPreferences
 from silentdune_client.utils.console import ConsoleBase

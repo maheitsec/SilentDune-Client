@@ -19,7 +19,6 @@
 #
 
 import logging
-import os
 import platform
 import pkg_resources
 from random import random
@@ -27,7 +26,6 @@ import requests
 import socket
 import sys
 
-from subprocess import check_output, CalledProcessError
 from cryptography.fernet import Fernet
 
 from silentdune_client import modules
@@ -36,7 +34,7 @@ from silentdune_client.models.global_preferences import GlobalPreferences
 from silentdune_client.modules import QueueTask
 from silentdune_client.modules.comm.sd_server.connection import SDSConnection
 from silentdune_client.modules.firewall.manager import SilentDuneClientFirewallModule, \
-    TASK_FIREWALL_RELOAD_RULES, TASK_FIREWALL_INSERT_RULES, TASK_FIREWALL_DELETE_RULES
+    TASK_FIREWALL_INSERT_RULES, TASK_FIREWALL_DELETE_RULES
 from silentdune_client.modules.comm.sd_server.auto_rules import create_tcp_server_conn_rule
 from silentdune_client.utils.misc import is_valid_ipv4_address, is_valid_ipv6_address
 

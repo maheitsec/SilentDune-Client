@@ -19,7 +19,6 @@
 #
 
 import hashlib
-import json
 import logging
 import os
 import pkg_resources
@@ -32,7 +31,7 @@ from silentdune_client.models.iptables_rules import IPMachineSubset, IPRulesFile
 # Import other module's TASK defines, set to None if module is not present.
 try:
     from silentdune_client.modules.comm.sd_server import TASK_SEND_SERVER_ALERT
-    from silentdune_client.modules.comm.sd_server import TASK_SEND_SERVER_ALERT_2
+    from silentdune_client.modules.comm.sd_server import TASK_SEND_SERVER_ALERT_2  # noqa
 except ImportError:
     TASK_SEND_SERVER_ALERT = None
 
