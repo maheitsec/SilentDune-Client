@@ -4,7 +4,7 @@
 # Original author is Sander Marechal <s.marechal@jejik.com>
 # http://www.jejik.com/articles/2007/02/a_simple_unix_linux_daemon_in_python/
 #
-# Copyright (C) 2015 EntPack
+# Copyright (C) 2015-2016 EntPack
 # see file 'LICENSE' for use and warranty information
 #
 # This program is free software; you can redistribute it and/or modify

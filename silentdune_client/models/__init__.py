@@ -1,7 +1,7 @@
 #
 # Authors: Robert Abram <robert.abram@entpack.com>,
 #
-# Copyright (C) 2015 EntPack
+# Copyright (C) 2015-2016 EntPack
 # see file 'LICENSE' for use and warranty information
 #
 # This program is free software; you can redistribute it and/or modify
