@@ -48,7 +48,7 @@ class SilentDuneJobModule(modules.BaseModule):
 	#if self.t_seconds > 45:
 	#    print "debug 1 message"
 
-	if self.t_seconds > 5:
+	if self.t_seconds > 120:
 	    print "debug 2 message"
 	    task = QueueTask(TASK_FIREWALL_RELOAD_RULES, 
 			    src_module=self.get_name(),
